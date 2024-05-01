@@ -3,8 +3,8 @@ import numpy as np
 import lib
 
 
-def process_video(fps: tuple[float, float], folder=None) -> None:
-    cap = cv2.VideoCapture('IMG_4255.MOV')
+def process_video(path: str, fps: tuple[float, float], folder=None) -> None:
+    cap = cv2.VideoCapture(path)
     frames = []
 
     while (cap.isOpened()):
@@ -48,4 +48,4 @@ if __name__ == "__main__":
     playback_rate = 30  # Hz - Iphone standard
     fps_settings = (capture_rate, playback_rate)
 
-    process_video(fps_settings, folder='video frames')
+    process_video('IMG_4255.MOV', fps_settings)
