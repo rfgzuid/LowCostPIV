@@ -34,7 +34,12 @@ def process_video(path: str, fps: tuple[float, float], folder=None) -> None:
         else:
             img = cv2.putText(frame, f't = {(idx / fps[0]):.3f} s', (20, 50),
                               cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.imshow('PROCESSED VIDEO', img)
+
+            video_frame = np.concatenate((frames[idx], img), axis=1)
+            height, width = video_frame.shape
+
+            video_frame = cv2.resize(video_frame, (round(width/3), round(height/3)), interpolation=cv2.INTER_AREA)
+            cv2.imshow('PROCESSED VIDEO', video_frame)
 
             if cv2.waitKey(round(1000 / fps[1])) & 0xFF == ord('q'):
                 break
