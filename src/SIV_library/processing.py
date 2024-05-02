@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-import torch
+# import torch
 from torch.utils.data import Dataset
 
 from tqdm import tqdm
@@ -35,7 +35,7 @@ class Video:
         cap = cv2.VideoCapture(f"{self.root}/{self.fn}")
 
         idx = 0
-        while (cap.isOpened()):
+        while cap.isOpened():
             ret, frame = cap.read()
 
             # if all frames have been loaded, break out of loop
@@ -120,7 +120,7 @@ class Processor:
             new_frame = self.mask(new_frame)
 
             if self.rescale is not None:
-                new_frame = self.rescale(new_frame, self.rescale)
+                new_frame = self.rescale(new_frame, self.rescale_factor)
 
             cv2.imwrite(f"{self.root}/{self.dir}_PROCESSED/{idx}{self.df}", new_frame)
 
