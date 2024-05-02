@@ -10,52 +10,6 @@ import os
 from collections.abc import Collection
 
 
-def process_video(path: str, fps: tuple[float, float], folder=None) -> None:
-    cap = cv2.VideoCapture(path)
-    frames = []
-
-    while (cap.isOpened()):
-        ret, frame = cap.read()
-
-        # if all frames have been loaded, break out of loop
-        if not ret:
-            break
-
-        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frames.append(frame)
-
-    new_frames = []
-    reference = frames[10]
-
-    # Pre-processing: black out background
-    for idx, frame in tqdm(enumerate(frames), total=len(frames), desc='Denoising'):
-        diff = cv2.absdiff(frame, reference)
-        _, mask = cv2.threshold(diff, 8, 255, cv2.THRESH_TOZERO)
-        thing = mask.astype(bool)
-        new_frame = frame[~mask]
-        new_frames.append(new_frame)
-
-    # If a folder is specified, save the processed frames. Else show a video of the processed frames
-    for idx, frame in enumerate(new_frames):
-        if folder is not None:
-            cv2.imwrite(f'{folder}/{idx}.bmp', frame)
-        else:
-            img = cv2.putText(frame, f't = {(idx / fps[0]):.3f} s', (20, 50),
-                              cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-
-            video_frame = np.concatenate((frames[idx], img), axis=1)
-            height, width = video_frame.shape[:2]
-
-            video_frame = cv2.resize(video_frame, (round(width/3), round(height/3)), interpolation=cv2.INTER_AREA)
-            cv2.imshow('PROCESSED VIDEO', video_frame)
-
-            if cv2.waitKey(round(1000 / fps[1])) & 0xFF == ord('q'):
-                break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
-
 class Video:
     """
     Load video frames and save them in a directory
@@ -106,14 +60,16 @@ class Processor:
         - Specify the folder containing video frames
     """
 
-    def __init__(self, path: str, df: str, settings: dict) -> None:
+    def __init__(self, path: str, df: str, denoise: bool = False, rescale: float | None = None) -> None:
         dirs = path.split('/')
         self.root = '/'.join(dirs[:-1])
 
         self.dir = dirs[-1]
         self.df = df  # data format for frame images
 
-        self.settings = settings
+        self.denoise_enabled = denoise
+        self.rescale_factor = rescale
+
         self.reference = None  # for smoke masking
 
     @staticmethod
@@ -153,14 +109,18 @@ class Processor:
 
             frame = cv2.imread(f"{self.root}/{self.dir}/{file}", cv2.IMREAD_GRAYSCALE)
             new_frame = self.crop_border(frame)
-            new_frame = self.denoise(new_frame)
+
+            if self.denoise_enabled:
+                new_frame = self.denoise(new_frame)
 
             # set first frame as reference
             if self.reference is None:
                 self.reference = new_frame
 
             new_frame = self.mask(new_frame)
-            # new_frame = self.rescale(new_frame, self.settings["rescale"])
+
+            if self.rescale is not None:
+                new_frame = self.rescale(new_frame, self.rescale)
 
             cv2.imwrite(f"{self.root}/{self.dir}_PROCESSED/{idx}{self.df}", new_frame)
 
@@ -188,9 +148,16 @@ class SIVDataset(Dataset):
 
         return img_a, img_b
 
-    def play_video(self, playback_fps: float):
+    def play_video(self, playback_fps: float = 30, capture_fps: float = 240, show_time: bool = True):
         for fn in self.files:
             frame = cv2.imread(fn, cv2.IMREAD_UNCHANGED)
+
+            if show_time:
+                idx = int(fn.split("/")[-1].split(".")[0])
+                frame = cv2.putText(frame, f't = {(idx / capture_fps):.3f} s', (20, 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255),
+                                    2, cv2.LINE_AA)
+
             cv2.imshow('PROCESSED VIDEO', frame)
 
             if cv2.waitKey(round(1000 / playback_fps)) & 0xFF == ord('q'):
