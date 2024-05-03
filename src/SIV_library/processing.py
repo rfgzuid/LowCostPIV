@@ -1,8 +1,8 @@
 import cv2
 import numpy as np
 
-# import torch
-from torch.utils.data import Dataset
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 from tqdm import tqdm
 import os
@@ -125,42 +125,56 @@ class Processor:
             cv2.imwrite(f"{self.root}/{self.dir}_PROCESSED/{idx}{self.df}", new_frame)
 
 
-class SIVDataset(Dataset):
-    """
-    Create an SIV Dataset
-    -   Creates a PyTorch Dataloader from a specified folder
-    -   Allows for videos to be played
-    """
+class Viewer:
+    def __init__(self, path: str, capture_fps: float = 240., playback_fps: float = 30.) -> None:
+        self.capture_fps, self.playback_fps = capture_fps, playback_fps
 
-    def __init__(self, path: str) -> None:
-        fns = os.listdir(path)
-        files = [f"{path}/{fn}" for fn in fns]
+        files = [f"{path}/{fn}" for fn in os.listdir(path)]
 
         # sort files by index (to ensure the dataset is sequential)
         self.files = sorted(files, key=lambda x: int(x.split("/")[-1].split(".")[0]))
 
-    def __len__(self):
-        return len(self.files)
+    def read_frame(self, fn: str, show_time: bool = True) -> np.ndarray:
+        frame = cv2.imread(fn, cv2.IMREAD_UNCHANGED)
 
-    def __getitem__(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
-        img_a = cv2.imread(self.files[idx], cv2.IMREAD_UNCHANGED)
-        img_b = cv2.imread(self.files[idx+1], cv2.IMREAD_UNCHANGED)
+        if show_time:
+            idx = int(fn.split("/")[-1].split(".")[0])
+            frame = cv2.putText(frame, f't = {(idx / self.capture_fps):.3f} s', (20, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255),
+                                2, cv2.LINE_AA)
+        return frame
 
-        return img_a, img_b
-
-    def play_video(self, playback_fps: float = 30, capture_fps: float = 240, show_time: bool = True):
+    def play_video(self) -> None:
         for fn in self.files:
-            frame = cv2.imread(fn, cv2.IMREAD_UNCHANGED)
-
-            if show_time:
-                idx = int(fn.split("/")[-1].split(".")[0])
-                frame = cv2.putText(frame, f't = {(idx / capture_fps):.3f} s', (20, 50),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255),
-                                    2, cv2.LINE_AA)
-
+            frame = self.read_frame(fn)
             cv2.imshow('PROCESSED VIDEO', frame)
 
-            if cv2.waitKey(round(1000 / playback_fps)) & 0xFF == ord('q'):
+            if cv2.waitKey(round(1000 / self.playback_fps)) & 0xFF == ord('q'):
                 break
-
         cv2.destroyAllWindows()
+
+    def vector_field(self, results: np.ndarray, scale: float) -> None:
+        info = list(zip(self.files, results))
+        fig, ax = plt.subplots()
+
+        frame = self.read_frame(info[0][0])
+        image = ax.imshow(frame, cmap='gray')
+
+        # Don't use very first frame for initialization - velocities are zero. This leads to poor vector length scaling
+        x0, y0, vx0, vy0 = info[3][1]
+        vx0, vy0 = np.ones_like(vx0) * 500, np.ones_like(vy0) * 500  # overwrite scaling if still buggy
+        new_x0, new_y0 = x0/scale, np.flip(y0/scale, axis=0)  # y flipped for correct image row coords
+        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, np.sqrt(vx0 * vx0 + vy0 * vy0), cmap='jet')
+
+        def update(idx):
+            frame = self.read_frame(info[idx][0])
+            image.set_data(frame)
+
+            # https://stackoverflow.com/questions/19329039/plotting-animated-quivers-in-python
+            vx, vy = info[idx][1][2], info[idx][1][3]
+            vectors.set_UVC(vx, vy, np.sqrt(vx * vx + vy * vy))
+
+            return image, vectors
+
+        _ = animation.FuncAnimation(fig=fig, func=update, frames=50, interval=1000/self.playback_fps)
+        plt.show()
