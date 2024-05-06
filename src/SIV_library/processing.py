@@ -23,6 +23,29 @@ class Video:
 
         self.indices = indices
 
+    def show_frame(self, frame_number: int) -> None:
+        cap = cv2.VideoCapture(f"{self.root}/{self.fn}")
+        image = None
+
+        idx = 0
+        while cap.isOpened():
+            ret, frame = cap.read()
+
+            # if all frames have been loaded, break out of loop
+            if not ret:
+                break
+
+            if idx == frame_number:
+                image = frame
+                break
+
+            idx += 1
+        cap.release()
+
+        cv2.imshow(f"Frame {frame_number}", image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
     def create_frames(self) -> None:
         folder_name = self.fn.split(".")[0]
 
@@ -119,7 +142,7 @@ class Processor:
 
             new_frame = self.mask(new_frame)
 
-            if self.rescale is not None:
+            if self.rescale_factor is not None:
                 new_frame = self.rescale(new_frame, self.rescale_factor)
 
             cv2.imwrite(f"{self.root}/{self.dir}_PROCESSED/{idx}{self.df}", new_frame)
@@ -154,27 +177,36 @@ class Viewer:
         cv2.destroyAllWindows()
 
     def vector_field(self, results: np.ndarray, scale: float) -> None:
-        info = list(zip(self.files, results))
         fig, ax = plt.subplots()
 
-        frame = self.read_frame(info[0][0])
+        velocities = results[:, 2:][1:]  # exclude reference frame (only nan/zero values)
+        abs_velocities = np.sqrt(velocities[:, 0]**2 + velocities[:, 1]**2)
+        min_abs, max_abs = np.min(abs_velocities, axis=0), np.max(abs_velocities, axis=0)
+
+        frame = self.read_frame(self.files[0])
         image = ax.imshow(frame, cmap='gray')
 
-        # Don't use very first frame for initialization - velocities are zero. This leads to poor vector length scaling
-        x0, y0, vx0, vy0 = info[3][1]
-        vx0, vy0 = np.ones_like(vx0) * 500, np.ones_like(vy0) * 500  # overwrite scaling if still buggy
+        # Note: velocity scaling is done for correct color mapping and quiver length
+        x0, y0, vx0, vy0 = results[0]
         new_x0, new_y0 = x0/scale, np.flip(y0/scale, axis=0)  # y flipped for correct image row coords
-        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, np.sqrt(vx0 * vx0 + vy0 * vy0), cmap='jet')
+        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, max_abs-min_abs, scale=0.2, cmap='jet')
 
         def update(idx):
-            frame = self.read_frame(info[idx][0])
+            frame = self.read_frame(self.files[idx])
             image.set_data(frame)
 
             # https://stackoverflow.com/questions/19329039/plotting-animated-quivers-in-python
-            vx, vy = info[idx][1][2], info[idx][1][3]
-            vectors.set_UVC(vx, vy, np.sqrt(vx * vx + vy * vy))
+            vx, vy = results[idx][2], results[idx][3]
+            scaling = np.sqrt(vx ** 2 + vy ** 2) - min_abs
+            vectors.set_UVC(vx, vy, scaling)
 
             return image, vectors
 
-        _ = animation.FuncAnimation(fig=fig, func=update, frames=50, interval=1000/self.playback_fps)
+        ani = animation.FuncAnimation(fig=fig, func=update, frames=len(self.files)-1, interval=1000/self.playback_fps)
+
+        # writer = animation.PillowWriter(fps=15,
+        #                                 metadata=dict(artist='Me'),
+        #                                 bitrate=1800)
+        # ani.save('Test Data/plume.gif', writer=writer)
+
         plt.show()
