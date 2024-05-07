@@ -1,11 +1,10 @@
 from SIV_library.processing import Video, Processor, Viewer
-from SIV_library.lib import OfflinePIV
+from torchPIV import OfflinePIV
 
 import numpy as np
 import torch
 
 import os
-import cv2
 
 
 if __name__ == "__main__":
@@ -37,7 +36,7 @@ if __name__ == "__main__":
         overlap=64,
         dt=int(1_000_000/capture_fps),  # Time between frames, mcs
         scale=scale,  # mm/pix
-        multipass=2,
+        multipass=3,
         multipass_mode="CWS",  # CWS or DWS
         multipass_scale=2.0,  # Window downscale on each pass
         folder_mode="sequential"  # Pairs or sequential frames
@@ -62,3 +61,4 @@ if __name__ == "__main__":
 
     # viewer.play_video()
     viewer.vector_field(res, scale)
+    # viewer.velocity_field(res, scale, 30, 'cubic')

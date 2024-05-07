@@ -3,6 +3,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from scipy.interpolate import RegularGridInterpolator
 
 from tqdm import tqdm
 import os
@@ -188,8 +189,9 @@ class Viewer:
 
         # Note: velocity scaling is done for correct color mapping and quiver length
         x0, y0, vx0, vy0 = results[0]
-        new_x0, new_y0 = x0/scale, np.flip(y0/scale, axis=0)  # y flipped for correct image row coords
-        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, max_abs-min_abs, scale=0.2, cmap='jet')
+        new_x0, new_y0 = x0/scale, y0/scale
+        vx0, vy0 = np.flip(vx0, axis=0), np.flip(vy0, axis=0)  # flip velocities for correct IMAGE coords
+        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, max_abs-min_abs, scale=.2, cmap='jet')
 
         def update(idx):
             frame = self.read_frame(self.files[idx])
@@ -197,10 +199,57 @@ class Viewer:
 
             # https://stackoverflow.com/questions/19329039/plotting-animated-quivers-in-python
             vx, vy = results[idx][2], results[idx][3]
+            vx, vy = np.flip(vx, axis=0), np.flip(vy, axis=0)
             scaling = np.sqrt(vx ** 2 + vy ** 2) - min_abs
             vectors.set_UVC(vx, vy, scaling)
 
             return image, vectors
+
+        ani = animation.FuncAnimation(fig=fig, func=update, frames=len(self.files)-1, interval=1000/self.playback_fps)
+
+        # writer = animation.PillowWriter(fps=15,
+        #                                 metadata=dict(artist='Me'),
+        #                                 bitrate=1800)
+        # ani.save('Test Data/plume.gif', writer=writer)
+
+        plt.show()
+
+    def velocity_field(self, results: np.ndarray, scale: float,
+                       resolution: int, interpolation_mode: str) -> None:
+        fig, ax = plt.subplots()
+
+        velocities = results[:, 2:][1:]  # exclude reference frame (only nan/zero values)
+        abs_velocities = np.sqrt(velocities[:, 0] ** 2 + velocities[:, 1] ** 2)
+        min_abs, max_abs = np.min(abs_velocities), np.max(abs_velocities)
+
+        frame = self.read_frame(self.files[0])
+        height, width = frame.shape[:2]
+
+        # grid points where to interpolate the velocity field to (num = desired resolution)
+        xg, yg = np.meshgrid(np.linspace(0, width, resolution),
+                             np.linspace(0, height, resolution))
+
+        x0, y0, vx0, vy0 = results[0]
+        new_x0, new_y0 = x0 / scale, y0 / scale
+        vx0, vy0 = np.flip(vx0, axis=0), np.flip(vy0, axis=0)
+
+        field = RegularGridInterpolator((new_x0[0, :], new_y0[:, 0]),
+                                        np.sqrt(vx0 ** 2 + vy0 ** 2), method=interpolation_mode,
+                                        bounds_error=False, fill_value=0)
+        values = field((xg, yg))
+        image = ax.imshow(values.T, vmin=min_abs, vmax=max_abs, cmap='jet')
+
+        def update(idx):
+            vx, vy = results[idx][2], results[idx][3]
+            vx, vy = np.flip(vx, axis=0), np.flip(vy, axis=0)
+
+            field = RegularGridInterpolator((new_x0[0, :], new_y0[:, 0]),
+                                            np.sqrt(vx ** 2 + vy ** 2), method=interpolation_mode,
+                                            bounds_error=False, fill_value=0)
+            values = field((xg, yg))
+            image.set_data(values.T)
+
+            return image,
 
         ani = animation.FuncAnimation(fig=fig, func=update, frames=len(self.files)-1, interval=1000/self.playback_fps)
 
