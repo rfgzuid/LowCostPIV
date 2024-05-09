@@ -35,31 +35,11 @@ def correlate_intensity(images_a: torch.Tensor, images_b: torch.Tensor) -> torch
     return res.squeeze()
 
 
-# def correlate_intensity_optim(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
-#     height, width = images_a.shape[-2:]
-#     num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
-#
-#     res = torch.zeros((images_a.shape[0], num_row + 1, num_column + 1))
-#
-#     for idx, (inp, ref) in tqdm(enumerate(zip(images_a, images_b)), total=images_a.shape[0]):
-#         inp, ref = inp.unsqueeze(0).unsqueeze(0).float(), ref.unsqueeze(0).unsqueeze(0).float()
-#
-#         unfolded = torch.nn.functional.unfold(ref, (height, width))
-#         conv_out = unfolded.transpose(1, 2) - inp.view(inp.size(0), -1)
-#
-#         sad = torch.sum(torch.abs(conv_out.transpose(1, 2)), dim=1)
-#         out = torch.nn.functional.fold(sad, (num_row+1, num_column+1), (1,1))
-#
-#         res[idx] = out
-#     return res.squeeze()
-
-
 def correlate_intensity_optim(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
     height, width = images_a.shape[-2:]
     num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
 
     inp, ref = images_a.unsqueeze(0).float(), images_b.unsqueeze(0).float()
-    print(inp.shape)
 
     unfolded = torch.nn.functional.unfold(ref, (height, width))
     conv_out = unfolded.transpose(1, 2) - inp.view(inp.size(0), -1)
