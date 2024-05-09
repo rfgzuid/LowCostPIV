@@ -84,7 +84,8 @@ class Processor:
         - Specify the folder containing video frames
     """
 
-    def __init__(self, path: str, df: str, denoise: bool = False, rescale: float | None = None) -> None:
+    def __init__(self, path: str, df: str,
+                 denoise: bool = False, rescale: float | None = None, crop: bool = False) -> None:
         dirs = path.split('/')
         self.root = '/'.join(dirs[:-1])
 
@@ -92,6 +93,7 @@ class Processor:
         self.df = df  # data format for frame images
 
         self.denoise_enabled = denoise
+        self.crop_enabled = crop
         self.rescale_factor = rescale
 
         self.reference = None  # for smoke masking
@@ -132,7 +134,11 @@ class Processor:
             idx = file.split('.')[0]
 
             frame = cv2.imread(f"{self.root}/{self.dir}/{file}", cv2.IMREAD_GRAYSCALE)
-            new_frame = self.crop_border(frame)
+
+            if self.crop_enabled:
+                new_frame = self.crop_border(frame)
+            else:
+                new_frame = frame
 
             if self.denoise_enabled:
                 new_frame = self.denoise(new_frame)

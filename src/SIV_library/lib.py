@@ -1,34 +1,93 @@
-import torch.nn.functional as F
+from torch.nn.functional import conv2d, pad, unfold, fold
 import torch
 
+from tqdm import tqdm
 
-def correlate_conv(images_a: torch.Tensor, images_b: torch.Tensor, idx: int) -> torch.Tensor:
+
+def correlate_conv(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
     """
     Compute cross correlation based on fft method
     Between two torch.Tensors of shape [c, width, height]
     fft performed over last two dimensions of tensors
     """
-    res = torch.zeros(128, 128, dtype=torch.float32)
+    inputs = images_a.float()
+    reference = images_b.float()
 
-    inp = torch.zeros((256, 256), dtype=torch.float32)
-    inp[64:192, 64:192] = images_a[idx]
-    outp = images_b[idx].float()
+    num_row, num_column = reference.shape[-2] - inputs.shape[-2], reference.shape[-1] - inputs.shape[-1]
+    res = torch.zeros((inputs.shape[0], num_row+1, num_column+1))
 
-    for i in range(128):
-        for j in range(128):
-            res[128 - 1 - i, 128 - 1 - j] = torch.sum(inp[i:i + 128, j:j + 128] * outp)
-    return res
+    for idx, (inp, ref) in tqdm(enumerate(zip(inputs, reference)), total=inputs.shape[0]):
+        res[idx] = conv2d(ref.unsqueeze(0).unsqueeze(0), inp.unsqueeze(0).unsqueeze(0), stride=1)
+    return res.squeeze()
 
 
-def correlate_intensity(images_a: torch.Tensor, images_b: torch.Tensor, idx: int) -> torch.Tensor:
-    res = torch.zeros(128, 128, dtype=torch.float32)
+def correlate_intensity(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
+    height, width = images_a.shape[-2:]
+    num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
 
-    inp = torch.zeros(255, 255, dtype=torch.float32)
-    inp[64:192, 64:192] = images_a[idx]
-    outp = images_b[idx].float()
+    res = torch.zeros((images_a.shape[0], num_row + 1, num_column + 1))
+    windows = images_a.float()
 
-    for i in range(128):
-        for j in range(128):
-            res[128-1-i, 128-1-j] = torch.sum(torch.abs(inp[i:i+128, j:j+128] - outp))
+    for j in tqdm(range(num_row + 1)):
+        for i in range(num_column + 1):
+            ref = images_b[:, j:j+height, i:i+width].float()
+            res[:, j, i] = torch.sum(torch.abs(windows-ref))
+    return res.squeeze()
 
-    return res
+
+# def correlate_intensity_optim(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
+#     height, width = images_a.shape[-2:]
+#     num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
+#
+#     res = torch.zeros((images_a.shape[0], num_row + 1, num_column + 1))
+#
+#     for idx, (inp, ref) in tqdm(enumerate(zip(images_a, images_b)), total=images_a.shape[0]):
+#         inp, ref = inp.unsqueeze(0).unsqueeze(0).float(), ref.unsqueeze(0).unsqueeze(0).float()
+#
+#         unfolded = torch.nn.functional.unfold(ref, (height, width))
+#         conv_out = unfolded.transpose(1, 2) - inp.view(inp.size(0), -1)
+#
+#         sad = torch.sum(torch.abs(conv_out.transpose(1, 2)), dim=1)
+#         out = torch.nn.functional.fold(sad, (num_row+1, num_column+1), (1,1))
+#
+#         res[idx] = out
+#     return res.squeeze()
+
+
+def correlate_intensity_optim(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
+    height, width = images_a.shape[-2:]
+    num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
+
+    inp, ref = images_a.unsqueeze(0).float(), images_b.unsqueeze(0).float()
+    print(inp.shape)
+
+    unfolded = torch.nn.functional.unfold(ref, (height, width))
+    conv_out = unfolded.transpose(1, 2) - inp.view(inp.size(0), -1)
+
+    sad = torch.sum(torch.abs(conv_out.transpose(1, 2)), dim=1)
+    out = torch.nn.functional.fold(sad, (num_row+1, num_column+1), (1,1))
+
+    return out.squeeze()
+
+
+def moving_reference_array(array: torch.Tensor, window_size, overlap,
+                           left: int, right: int, top: int, bottom: int) -> torch.Tensor:
+    padded = pad(array, (left, right, top, bottom))
+    shape = padded.shape
+
+    strides = (
+        shape[-1] * (window_size - overlap),
+        (window_size - overlap),
+        shape[-1],
+        1
+    )
+    shape = (
+        int((shape[-2] - window_size - top - bottom) / (window_size - overlap)) + 1,
+        int((shape[-1] - window_size - left - right) / (window_size - overlap)) + 1,
+        window_size + top + bottom,
+        window_size + left + right,
+    )
+
+    return torch.as_strided(
+        padded, size=shape, stride=strides
+    ).reshape(-1, window_size + top + bottom, window_size + left + right)
