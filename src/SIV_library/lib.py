@@ -1,38 +1,44 @@
-from torch.nn.functional import conv2d, pad, unfold, fold
+from torch.nn.functional import conv2d, pad
 import torch
 
 from tqdm import tqdm
 
 
-def correlate_conv(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
-    """
-    Compute cross correlation based on fft method
-    Between two torch.Tensors of shape [c, width, height]
-    fft performed over last two dimensions of tensors
-    """
-    inp, ref = images_a.float(), images_b.float()
+def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
+    windows, areas = windows.float(), areas.float()
+    (count, window_rows, window_cols), (area_rows, area_cols) = windows.shape, areas.shape[-2:]
 
-    num_row, num_column = ref.shape[-2] - inp.shape[-2], ref.shape[-1] - inp.shape[-1]
-    res = torch.zeros((inp.shape[0], num_row+1, num_column+1))
+    res = torch.zeros((count, area_rows - window_rows + 1, area_cols - window_cols + 1))
 
-    for idx, (window, area) in tqdm(enumerate(zip(inp, ref)), total=inp.shape[0]):
-        res[idx] = conv2d(area.unsqueeze(0).unsqueeze(0), window.unsqueeze(0).unsqueeze(0), stride=1)
+    if mode == 0:  # correlation mode
+        for idx, (window, area) in tqdm(enumerate(zip(windows, areas)), total=count):
+            corr = conv2d(area.unsqueeze(0).unsqueeze(0), window.unsqueeze(0).unsqueeze(0), stride=1)
+            res[idx] = corr
+
+        for channel in res:
+            if torch.count_nonzero(channel) == 0:
+                channel[(area_rows - window_rows) // 2, (area_rows - window_rows) // 2] = 1.
+
+    elif mode == 1:  # SAD mode
+        for j in tqdm(range(area_rows - window_rows + 1)):
+            for i in range(area_cols - window_cols + 1):
+                ref = areas[:, j:j + window_rows, i:i + window_cols]
+                res[:, j, i] = torch.sum(torch.abs(windows - ref), dim=(1, 2))
+
+        for channel in res:
+            if torch.count_nonzero(channel) == 0:
+                channel[(area_rows - window_rows) // 2, (area_rows - window_rows) // 2] = -1.
+
+    else:
+        raise ValueError("Only mode 0 (correlation) or 1 (SAD) are supported")
+
     return res
 
 
-def correlate_intensity(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
-    height, width = images_a.shape[-2:]
-    num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
-
-    res = torch.zeros((images_a.shape[0], num_row + 1, num_column + 1))
-    windows, areas = images_a.float(), images_b.float()
-
-    for j in tqdm(range(num_row + 1)):
-        for i in range(num_column + 1):
-            ref = areas[:, j:j + height, i:i + width]
-            res[:, j, i] = torch.sum(torch.abs(windows - ref), dim=(1, 2))
-
-    return res
+def match_to_displacement(matches: torch.Tensor):
+    count, rows, cols = matches.shape
+    res = matches.view(matches.shape[0], -1).argmax(-1, keepdim=True)
+    print(res)
 
 
 def moving_reference_array(array: torch.Tensor, window_size, overlap,
