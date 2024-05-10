@@ -10,15 +10,14 @@ def correlate_conv(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tens
     Between two torch.Tensors of shape [c, width, height]
     fft performed over last two dimensions of tensors
     """
-    inputs = images_a.float()
-    reference = images_b.float()
+    inp, ref = images_a.float(), images_b.float()
 
-    num_row, num_column = reference.shape[-2] - inputs.shape[-2], reference.shape[-1] - inputs.shape[-1]
-    res = torch.zeros((inputs.shape[0], num_row+1, num_column+1))
+    num_row, num_column = ref.shape[-2] - inp.shape[-2], ref.shape[-1] - inp.shape[-1]
+    res = torch.zeros((inp.shape[0], num_row+1, num_column+1))
 
-    for idx, (inp, ref) in tqdm(enumerate(zip(inputs, reference)), total=inputs.shape[0]):
-        res[idx] = conv2d(ref.unsqueeze(0).unsqueeze(0), inp.unsqueeze(0).unsqueeze(0), stride=1)
-    return res.squeeze()
+    for idx, (window, area) in tqdm(enumerate(zip(inp, ref)), total=inp.shape[0]):
+        res[idx] = conv2d(area.unsqueeze(0).unsqueeze(0), window.unsqueeze(0).unsqueeze(0), stride=1)
+    return res
 
 
 def correlate_intensity(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
@@ -26,28 +25,14 @@ def correlate_intensity(images_a: torch.Tensor, images_b: torch.Tensor) -> torch
     num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
 
     res = torch.zeros((images_a.shape[0], num_row + 1, num_column + 1))
-    windows = images_a.float()
+    windows, areas = images_a.float(), images_b.float()
 
     for j in tqdm(range(num_row + 1)):
         for i in range(num_column + 1):
-            ref = images_b[:, j:j+height, i:i+width].float()
-            res[:, j, i] = torch.sum(torch.abs(windows-ref))
-    return res.squeeze()
+            ref = areas[:, j:j + height, i:i + width]
+            res[:, j, i] = torch.sum(torch.abs(windows - ref), dim=(1, 2))
 
-
-def correlate_intensity_optim(images_a: torch.Tensor, images_b: torch.Tensor) -> torch.Tensor:
-    height, width = images_a.shape[-2:]
-    num_row, num_column = images_b.shape[-2] - images_a.shape[-2], images_b.shape[-1] - images_a.shape[-1]
-
-    inp, ref = images_a.unsqueeze(0).float(), images_b.unsqueeze(0).float()
-
-    unfolded = torch.nn.functional.unfold(ref, (height, width))
-    conv_out = unfolded.transpose(1, 2) - inp.view(inp.size(0), -1)
-
-    sad = torch.sum(torch.abs(conv_out.transpose(1, 2)), dim=1)
-    out = torch.nn.functional.fold(sad, (num_row+1, num_column+1), (1,1))
-
-    return out.squeeze()
+    return res
 
 
 def moving_reference_array(array: torch.Tensor, window_size, overlap,
