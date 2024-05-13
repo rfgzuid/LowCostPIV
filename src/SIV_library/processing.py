@@ -117,11 +117,10 @@ class Processor:
 
     # isolate smoke by subtracting reference image (see Jonas paper)
     def mask(self, image: np.ndarray) -> np.ndarray:
-        frame = image.copy()  # IDK why but without copying the masking goes wrong
-        diff = cv2.absdiff(image, self.reference)
-        _, mask = cv2.threshold(diff, 8, 255, cv2.THRESH_BINARY_INV)
-        frame[mask.astype(bool)] = 0
-        return frame
+        diff = image.astype(np.float32) - self.reference.astype(np.float32)
+        diff = np.where(diff < 0., 0., diff)
+        diff *= 255./diff.max()
+        return diff.astype(np.uint8)
 
     def postprocess(self) -> None:
         try:
@@ -134,6 +133,7 @@ class Processor:
             idx = file.split('.')[0]
 
             frame = cv2.imread(f"{self.root}/{self.dir}/{file}", cv2.IMREAD_GRAYSCALE)
+            # frame = cv2.imread(f"{self.root}/{self.dir}/{file}", cv2.IMREAD_UNCHANGED)
 
             if self.crop_enabled:
                 new_frame = self.crop_border(frame)

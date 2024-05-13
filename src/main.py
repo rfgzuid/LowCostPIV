@@ -1,21 +1,20 @@
 from SIV_library.processing import Video, Processor, Viewer
-from torchPIV import OfflinePIV
+from torchPIV.PIVbackend import OfflinePIV, free_cuda_memory
 
 import numpy as np
 import torch
 
-import cv2
 import os
 
 
 if __name__ == "__main__":
-    video_file = "plume simulation.mp4"
+    video_file = "SmokeVideo.MOV"
     fn = video_file.split(".")[0]
 
     # reference frame specified first, then the range we want to analyse with SIV
-    frames = [0, *(i for i in range(300, 400))]
+    # frames = [0, *(i for i in range(300, 400))]
 
-    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=frames)
+    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=None)
     # vid.show_frame(500)
     vid.create_frames()
 
@@ -24,6 +23,7 @@ if __name__ == "__main__":
 
     device = torch.cuda.get_device_name() if torch.cuda.is_available() else "cpu"
     print(device)
+    free_cuda_memory()
 
     capture_fps = 240.
     scale = 0.02
