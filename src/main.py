@@ -1,4 +1,4 @@
-from SIV_library.processing import Video, Processor, Viewer
+from src.SIV_library.processing import Video, Processor, Viewer
 from torchPIV.PIVbackend import OfflinePIV, free_cuda_memory
 
 import numpy as np
@@ -41,6 +41,7 @@ if __name__ == "__main__":
         folder_mode="sequential"  # Pairs or sequential frames
     )
 
+
     if f"{fn}_RESULTS.npy" not in os.listdir(f"Test Data"):
         results = []
         for out in t():
@@ -59,5 +60,8 @@ if __name__ == "__main__":
     viewer = Viewer(rf"Test Data/{fn}_PROCESSED", playback_fps=30., capture_fps=capture_fps)
 
     # viewer.play_video()
+    print(res[0])
+    print(res.shape)
+    print(res[0].shape)
     viewer.vector_field(res, scale)
     # viewer.velocity_field(res, scale, 30, 'cubic')
