@@ -197,7 +197,7 @@ class Viewer:
         x0, y0, vx0, vy0 = results[0]
         new_x0, new_y0 = x0/scale, y0/scale
         vx0, vy0 = np.flip(vx0, axis=0), np.flip(vy0, axis=0)  # flip velocities for correct IMAGE coords
-        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, max_abs-min_abs, scale=.2, cmap='jet')
+        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, max_abs-min_abs, scale=.5, cmap='jet')
 
         def update(idx):
             frame = self.read_frame(self.files[idx])
@@ -213,10 +213,10 @@ class Viewer:
 
         ani = animation.FuncAnimation(fig=fig, func=update, frames=len(self.files)-1, interval=1000/self.playback_fps)
 
-        # writer = animation.PillowWriter(fps=15,
-        #                                 metadata=dict(artist='Me'),
-        #                                 bitrate=1800)
-        # ani.save('Test Data/plume.gif', writer=writer)
+        writer = animation.PillowWriter(fps=15,
+                                        metadata=dict(artist='Me'),
+                                        bitrate=1800)
+        ani.save('Test Data/plume.gif', writer=writer)
 
         plt.show()
 

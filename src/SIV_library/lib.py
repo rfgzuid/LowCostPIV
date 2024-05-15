@@ -14,21 +14,11 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
         for idx, (window, area) in tqdm(enumerate(zip(windows, areas)), total=count):
             corr = conv2d(area.unsqueeze(0).unsqueeze(0), window.unsqueeze(0).unsqueeze(0), stride=1)
             res[idx] = corr
-
-        for channel in res:
-            if torch.count_nonzero(channel) == 0:
-                channel[(area_rows - window_rows) // 2, (area_rows - window_rows) // 2] = 1.
-
     elif mode == 1:  # SAD mode
         for j in tqdm(range(area_rows - window_rows + 1)):
             for i in range(area_cols - window_cols + 1):
                 ref = areas[:, j:j + window_rows, i:i + window_cols]
-                res[:, j, i] = torch.sum(torch.abs(windows - ref), dim=(1, 2))
-
-        for channel in res:
-            if torch.count_nonzero(channel) == 0:
-                channel[(area_rows - window_rows) // 2, (area_rows - window_rows) // 2] = -1.
-
+                res[:, j, i] = torch.sum(windows.sub(ref).abs(), dim=(1, 2))
     else:
         raise ValueError("Only mode 0 (correlation) or 1 (SAD) are supported")
 
