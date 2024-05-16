@@ -64,38 +64,6 @@ def compute_derivatives(img1, img2):
 
     fx = conv2d(img1, kernel_x, padding=1)[:, :, 1:, 1:] + conv2d(img2, kernel_x, padding=1)[:, :, 1:, 1:]
     fy = conv2d(img1, kernel_y, padding=1)[:, :, 1:, 1:] + conv2d(img2, kernel_y, padding=1)[:, :, 1:, 1:]
-    ft = conv2d(img1, kernel_t, padding=1)[:, :, 1:, 1:] + conv2d(img2, -kernel_t, padding=1)[:, :, 1:, 1:]
+    ft = conv2d(img1, -kernel_t, padding=1)[:, :, 1:, 1:] + conv2d(img2, kernel_t, padding=1)[:, :, 1:, 1:]
 
     return fx, fy, ft
-
-
-# img1 = cv2.imread('../Test Data/plume simulation_PROCESSED/00101.jpg', cv2.IMREAD_GRAYSCALE)
-# img1 = cv2.resize(img1, (round(img1.shape[0]/3), round(img1.shape[1]/3)), interpolation=cv2.INTER_AREA)
-#
-# img2 = cv2.imread('../Test Data/plume simulation_PROCESSED/00102.jpg', cv2.IMREAD_GRAYSCALE)
-# img2 = cv2.resize(img2, (round(img2.shape[0]/3), round(img2.shape[1]/3)), interpolation=cv2.INTER_AREA)
-#
-# cv2.imshow('1', img1)
-# cv2.imshow('2', img2)
-# cv2.waitKey(50)
-# cv2.destroyAllWindows()
-#
-# u, v = optical_flow(img1, img2, 1000., 100)
-#
-# abs_vel = np.sqrt(u**2 + v**2)
-# plt.imshow(abs_vel, cmap='jet')
-# plt.show()
-
-# # https://stackoverflow.com/questions/24116027/slicing-arrays-with-meshgrid-array-indices-in-numpy
-# x, y = np.meshgrid(np.linspace(50, 600, 51, dtype=np.int16),
-#                    np.linspace(50, 650, 52, dtype=np.int16))
-# xx, yy = x[...], y[...]
-# vx, vy = u[yy, xx], v[yy, xx]
-#
-# # plt.quiver(x, y, vx, vy, color='black')
-# plt.show()
-#
-# plt.imshow(u, cmap='jet')
-# plt.show()
-# plt.imshow(v, cmap='jet')
-# plt.show()
