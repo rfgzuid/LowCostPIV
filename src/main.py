@@ -8,13 +8,13 @@ import os
 
 
 if __name__ == "__main__":
-    video_file = "plume simulation.mp4"
+    video_file = "Cilinder.MOV"
     fn = video_file.split(".")[0]
 
     # reference frame specified first, then the range we want to analyse with SIV
-    # frames = [0, *(i for i in range(300, 400))]
+    frames = [0, *(i for i in range(200, 251))]
 
-    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=None)
+    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=frames)
     # vid.show_frame(500)
     vid.create_frames()
 
