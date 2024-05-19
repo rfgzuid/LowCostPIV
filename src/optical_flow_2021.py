@@ -8,11 +8,11 @@ Torch adaptation of pure python implementation
 """
 
 import torch
-from torch.nn.functional import conv2d
-import cv2
+from torch.nn.functional import conv2d, pad
+
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+import matplotlib.animation as animation
 
 
 def optical_flow(img1: torch.Tensor, img2: torch.Tensor, alpha: float, num_iter: int, eps: float | None):
@@ -26,9 +26,6 @@ def optical_flow(img1: torch.Tensor, img2: torch.Tensor, alpha: float, num_iter:
     avg_kernel = torch.tensor([[[[1/12, 1/6, 1/12],
                                [1/6, 0, 1/6],
                                [1/12, 1/6, 1/12]]]], dtype=torch.float32, device=device)
-    deltas = []
-
-    us, vs = torch.zeros((100, *u.shape)), torch.zeros((100, *v.shape))
 
     for i in range(num_iter):
         u_avg = conv2d(u, avg_kernel, padding=1)
@@ -39,18 +36,17 @@ def optical_flow(img1: torch.Tensor, img2: torch.Tensor, alpha: float, num_iter:
         u_new = u_avg - I_x * der
         v_new = v_avg - I_y * der
 
+        # MSE early stopping https://www.ipol.im/pub/art/2013/20/article.pdf
         delta = torch.sum((u_new - u)**2) + torch.sum((v_new - v)**2)
-        deltas.append(delta.item())
+        delta /= img1.shape[-2] * img1.shape[-1]
 
         if eps is not None and delta < eps:
+            print('Early stopping', i)
             break
-
-        if i % 100 == 0:
-            us[i//100], vs[i//100] = u_new, v_new
 
         u, v = u_new, v_new
 
-    return us.squeeze(), vs.squeeze(), deltas
+    return u.squeeze(), v.squeeze()
 
 
 def compute_derivatives(img1, img2):
@@ -62,8 +58,51 @@ def compute_derivatives(img1, img2):
                                [1/4, 1/4]]]], dtype=torch.float32, device=device)
     kernel_t = torch.ones((1, 1, 2, 2), dtype=torch.float32, device=device) / 4
 
-    fx = conv2d(img1, kernel_x, padding=1)[:, :, 1:, 1:] + conv2d(img2, kernel_x, padding=1)[:, :, 1:, 1:]
-    fy = conv2d(img1, kernel_y, padding=1)[:, :, 1:, 1:] + conv2d(img2, kernel_y, padding=1)[:, :, 1:, 1:]
-    ft = conv2d(img1, -kernel_t, padding=1)[:, :, 1:, 1:] + conv2d(img2, kernel_t, padding=1)[:, :, 1:, 1:]
+    padding = (0, 1, 0, 1)  # add a column right and a row at the bottom
+    img1, img2 = pad(img1, padding), pad(img2, padding)
+
+    fx = conv2d(img1, kernel_x) + conv2d(img2, kernel_x)
+    fy = conv2d(img1, kernel_y) + conv2d(img2, kernel_y)
+    ft = conv2d(img1, -kernel_t) + conv2d(img2, kernel_t)
 
     return fx, fy, ft
+
+
+def plot_velocity(velocities: np.ndarray, grid_spacing=50) -> None:
+    num_frames, _, height, width = velocities.shape
+    fig, ax = plt.subplots()
+
+    abs_velocities = np.sqrt(velocities[:, 0] ** 2 + velocities[:, 1] ** 2)
+    min_abs, max_abs = np.min(abs_velocities), np.max(abs_velocities)
+
+    u0, v0 = velocities[0]
+
+    num_x, num_y = width // grid_spacing, height // grid_spacing
+
+    # https://stackoverflow.com/questions/24116027/slicing-arrays-with-meshgrid-array-indices-in-numpy
+    x, y = np.meshgrid(np.linspace(grid_spacing, grid_spacing * num_x, num_x + 1),
+                       np.linspace(grid_spacing, grid_spacing * num_y, num_y + 1))
+    xx, yy = x[...].astype(np.uint16), y[...].astype(np.uint16)
+
+    vx0, vy0 = u0[yy, xx], v0[yy, xx]
+    vectors = ax.streamplot(x, y, vx0, vy0, color='black')  # , scale=10_000 / max_abs)
+
+    image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='turbo')
+    fig.colorbar(image, ax=ax)
+
+    def update(idx):
+        image.set_data(abs_velocities[idx])
+
+        u, v = velocities[idx]
+        vx, vy = u[yy, xx], v[yy, xx]
+        vectors.set_UVC(vx, vy)
+
+        ax.set_title(f"t = {idx / 240:.3f} s")
+        return image, vectors
+
+    ani = animation.FuncAnimation(fig=fig, func=update, frames=velocities.shape[0], interval=100)
+
+    # writer = animation.PillowWriter(fps=5)
+    # ani.save('../Test Data/cilinder.gif', writer=writer)
+
+    plt.show()

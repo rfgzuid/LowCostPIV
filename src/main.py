@@ -12,7 +12,7 @@ if __name__ == "__main__":
     fn = video_file.split(".")[0]
 
     # reference frame specified first, then the range we want to analyse with SIV
-    frames = [0, *(i for i in range(200, 251))]
+    frames = [0, *(i for i in range(225, 351))]
 
     vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=frames)
     # vid.show_frame(500)
