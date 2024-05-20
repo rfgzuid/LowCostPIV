@@ -8,101 +8,125 @@ Torch adaptation of pure python implementation
 """
 
 import torch
+from torch.utils.data import Dataset
 from torch.nn.functional import conv2d, pad
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-
-def optical_flow(img1: torch.Tensor, img2: torch.Tensor, alpha: float, num_iter: int, eps: float | None):
-    device = img1.device
-
-    img1, img2 = torch.tensor(img1)[None, None, :, :].float(), torch.tensor(img2)[None, None, :, :].float()
-    u, v = torch.zeros_like(img1, device=device), torch.zeros_like(img1, device=device)  # initialize velocities to 0
-
-    I_x, I_y, I_t = compute_derivatives(img1, img2)
-
-    avg_kernel = torch.tensor([[[[1/12, 1/6, 1/12],
-                               [1/6, 0, 1/6],
-                               [1/12, 1/6, 1/12]]]], dtype=torch.float32, device=device)
-
-    for i in range(num_iter):
-        u_avg = conv2d(u, avg_kernel, padding=1)
-        v_avg = conv2d(v, avg_kernel, padding=1)
-
-        der = (I_x * u_avg + I_y * v_avg + I_t) / (alpha ** 2 + I_x ** 2 + I_y ** 2)
-
-        u_new = u_avg - I_x * der
-        v_new = v_avg - I_y * der
-
-        # MSE early stopping https://www.ipol.im/pub/art/2013/20/article.pdf
-        delta = torch.sum((u_new - u)**2) + torch.sum((v_new - v)**2)
-        delta /= img1.shape[-2] * img1.shape[-1]
-
-        if eps is not None and delta < eps:
-            print('Early stopping', i)
-            break
-
-        u, v = u_new, v_new
-
-    return u.squeeze(), v.squeeze()
+from tqdm import tqdm
 
 
-def compute_derivatives(img1, img2):
-    device = img1.device
+class HornSchunck:
+    def __init__(self, dataset: Dataset, alpha: float, num_iter: int, device: torch.device):
+        self.dataset = dataset
+        self.device = device
 
-    kernel_x = torch.tensor([[[[-1/4, 1/4],
-                               [-1/4, 1/4]]]], dtype=torch.float32, device=device)
-    kernel_y = torch.tensor([[[[-1/4, -1/4],
-                               [1/4, 1/4]]]], dtype=torch.float32, device=device)
-    kernel_t = torch.ones((1, 1, 2, 2), dtype=torch.float32, device=device) / 4
+        self.img_shape = dataset[0][0].shape
+        self.alpha = alpha
+        self.num_iter = num_iter
 
-    padding = (0, 1, 0, 1)  # add a column right and a row at the bottom
-    img1, img2 = pad(img1, padding), pad(img2, padding)
+        self.eps = None
 
-    fx = conv2d(img1, kernel_x) + conv2d(img2, kernel_x)
-    fy = conv2d(img1, kernel_y) + conv2d(img2, kernel_y)
-    ft = conv2d(img1, -kernel_t) + conv2d(img2, kernel_t)
+        self.velocities = torch.zeros((len(self.dataset), 2, *self.img_shape)).to(self.device)
 
-    return fx, fy, ft
+        if device not in ['cpu', 'cuda']:
+            raise ValueError("Please specify either cpu or cuda")
+        elif device == 'cuda' and not torch.cuda.is_available():
+            raise ValueError("No support for cuda available")
 
+    def optical_flow(self):
+        for idx, (a, b) in tqdm(enumerate(self.dataset), total=len(self.dataset)):
+            a, b = a.to(self.device), b.to(self.device)
+            a, b = a[None, None, :, :].float(), b[None, None, :, :].float()
 
-def plot_velocity(velocities: np.ndarray, grid_spacing=50) -> None:
-    num_frames, _, height, width = velocities.shape
-    fig, ax = plt.subplots()
+            u, v = torch.zeros_like(a), torch.zeros_like(a)
 
-    abs_velocities = np.sqrt(velocities[:, 0] ** 2 + velocities[:, 1] ** 2)
-    min_abs, max_abs = np.min(abs_velocities), np.max(abs_velocities)
+            Ix, Iy, It = self.compute_derivatives(a, b)
 
-    u0, v0 = velocities[0]
+            avg_kernel = torch.tensor([[[[1/12, 1/6, 1/12],
+                                         [1/6, 0, 1/6],
+                                         [1/12, 1/6, 1/12]]]], dtype=torch.float32, device=self.device)
 
-    num_x, num_y = width // grid_spacing, height // grid_spacing
+            for i in range(self.num_iter):
+                u_avg = conv2d(u, avg_kernel, padding=1)
+                v_avg = conv2d(v, avg_kernel, padding=1)
 
-    # https://stackoverflow.com/questions/24116027/slicing-arrays-with-meshgrid-array-indices-in-numpy
-    x, y = np.meshgrid(np.linspace(grid_spacing, grid_spacing * num_x, num_x + 1),
-                       np.linspace(grid_spacing, grid_spacing * num_y, num_y + 1))
-    xx, yy = x[...].astype(np.uint16), y[...].astype(np.uint16)
+                der = (Ix * u_avg + Iy * v_avg + It) / (self.alpha ** 2 + Ix ** 2 + Iy ** 2)
 
-    vx0, vy0 = u0[yy, xx], v0[yy, xx]
-    vectors = ax.streamplot(x, y, vx0, vy0, color='black')  # , scale=10_000 / max_abs)
+                u_new = u_avg - Ix * der
+                v_new = v_avg - Iy * der
 
-    image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='turbo')
-    fig.colorbar(image, ax=ax)
+                # MSE early stopping https://www.ipol.im/pub/art/2013/20/article.pdf
+                delta = torch.sum((u_new - u) ** 2) + torch.sum((v_new - v) ** 2)
+                delta /= a.shape[-2] * a.shape[-1]
 
-    def update(idx):
-        image.set_data(abs_velocities[idx])
+                if self.eps is not None and delta < self.eps:
+                    print('Early stopping', i)
+                    break
 
-        u, v = velocities[idx]
-        vx, vy = u[yy, xx], v[yy, xx]
-        vectors.set_UVC(vx, vy)
+                u, v = u_new, v_new
 
-        ax.set_title(f"t = {idx / 240:.3f} s")
-        return image, vectors
+            self.velocities[idx, 0], self.velocities[idx, 1] = u.squeeze(), v.squeeze()
 
-    ani = animation.FuncAnimation(fig=fig, func=update, frames=velocities.shape[0], interval=100)
+    @staticmethod
+    def compute_derivatives(img1: torch.Tensor, img2: torch.Tensor):
+        device = img1.device
 
-    # writer = animation.PillowWriter(fps=5)
-    # ani.save('../Test Data/cilinder.gif', writer=writer)
+        kernel_x = torch.tensor([[[[-1 / 4, 1 / 4],
+                                   [-1 / 4, 1 / 4]]]], dtype=torch.float32, device=device)
+        kernel_y = torch.tensor([[[[-1 / 4, -1 / 4],
+                                   [1 / 4, 1 / 4]]]], dtype=torch.float32, device=device)
+        kernel_t = torch.ones((1, 1, 2, 2), dtype=torch.float32, device=device) / 4
 
-    plt.show()
+        padding = (0, 1, 0, 1)  # add a column right and a row at the bottom
+        img1, img2 = pad(img1, padding), pad(img2, padding)
+
+        fx = conv2d(img1, kernel_x) + conv2d(img2, kernel_x)
+        fy = conv2d(img1, kernel_y) + conv2d(img2, kernel_y)
+        ft = conv2d(img1, -kernel_t) + conv2d(img2, kernel_t)
+
+        return fx, fy, ft
+
+    def plot_velocity(self, grid_spacing: int = 50, filename: str | None = None):
+        num_frames, _, height, width = self.velocities.shape
+        velocities = self.velocities.cpu().numpy()
+
+        fig, ax = plt.subplots()
+
+        abs_velocities = np.sqrt(velocities[:, 0] ** 2 + velocities[:, 1] ** 2)
+        min_abs, max_abs = np.min(abs_velocities), np.max(abs_velocities)
+
+        u0, v0 = velocities[0]
+
+        num_x, num_y = width // grid_spacing, height // grid_spacing
+
+        # https://stackoverflow.com/questions/24116027/slicing-arrays-with-meshgrid-array-indices-in-numpy
+        x, y = np.meshgrid(np.linspace(grid_spacing, grid_spacing * num_x - grid_spacing, num_x + 1),
+                           np.linspace(grid_spacing, grid_spacing * num_y - grid_spacing, num_y + 1))
+        xx, yy = x[...].astype(np.uint16), y[...].astype(np.uint16)
+
+        vx0, vy0 = u0[yy, xx], v0[yy, xx]
+        vectors = ax.quiver(x, y, vx0, vy0, color='black', scale=max_abs/100, units='xy')
+
+        image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='turbo')
+        fig.colorbar(image, ax=ax)
+
+        def update(idx):
+            image.set_data(abs_velocities[idx])
+
+            u, v = velocities[idx]
+            vx, vy = u[yy, xx], v[yy, xx]
+            vectors.set_UVC(vx, vy)
+
+            ax.set_title(f"t = {idx / 240:.3f} s")
+            return image, vectors
+
+        ani = animation.FuncAnimation(fig=fig, func=update, frames=velocities.shape[0], interval=100)
+
+        if filename is not None:
+            writer = animation.PillowWriter(fps=5)
+            ani.save(f'../Test Data/{filename}', writer=writer)
+
+        plt.show()
