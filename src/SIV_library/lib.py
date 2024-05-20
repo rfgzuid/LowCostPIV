@@ -60,7 +60,7 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
 
 def correlation_to_displacement(
         corr: torch.Tensor,
-        n_rows, n_cols, interpolation_mode:int  = 0):
+        n_rows, n_cols, interpolation_mode: int = 0):
     """
     Correlation maps are converted to displacement for
     each interrogation window
@@ -84,14 +84,19 @@ def correlation_to_displacement(
     right[right <= 0] = m[right <= 0]
     top[top >= k * d - 1] = m[top >= k * d - 1]
     bot[bot <= 0] = m[bot <= 0]
+    # snap je deze notatie?
 
     cm = torch.gather(cor, -1, m)
     cl = torch.gather(cor, -1, left)
     cr = torch.gather(cor, -1, right)
     ct = torch.gather(cor, -1, top)
     cb = torch.gather(cor, -1, bot)
-    nom1, nom2, den1, den2 = 0, 0, 1, 1
 
+    # ctl, ctr, cbl, cbr
+
+    # verander indices om ook de hoeken te krijgen, dus ctl, ctr, cbl, cbr
+
+    nom1, nom2, den1, den2 = 0, 0, 1, 1
 
     # Gaussian interpolation
     if interpolation_mode == 0:
@@ -107,9 +112,28 @@ def correlation_to_displacement(
         nom2 = cb - ct
         den2 = 2 * (cb + ct) - 4 * cm
 
+    # SIV interpolation
+    elif interpolation_mode == 2:
+
+        x = np.array((cl, cm, cr))
+        y = np.array((ct, cm, cb))
+        X, Y = np.meshgrid(x, y, copy=False)
+        X, Y = np.meshgrid(x, y, copy=False)
+        Z = cm  # ?
+
+        X = X.flatten()
+        Y = Y.flatten()
+        A = np.array([X * 0 + 1, X, Y, X ** 2, X ** 2 * Y, X ** 2 * Y ** 2, Y ** 2, X * Y ** 2, X * Y]).T
+        B = Z.flatten()
+
+        coeff, r, rank, s = np.linalg.lstsq(A, B)
+        den2, den1 = 1, 1
+        nom1 = 1  # change to result for x
+        nom2 = 1  # change to result for y
+
     m2d = torch.cat((m // d, m % k), -1)
-    v = m2d[:, 0][:, None] + nom2 / den2
     u = m2d[:, 1][:, None] + nom1 / den1
+    v = m2d[:, 0][:, None] + nom2 / den2
 
     default_peak_position = corr.shape[-2:]
     v = v - int(default_peak_position[0] / 2)
@@ -123,7 +147,7 @@ def correlation_to_displacement(
 
 def get_field_shape(image_size, search_area_size, overlap):
     field_shape = (np.array(image_size) - search_area_size) // (
-        search_area_size - overlap
+            search_area_size - overlap
     ) + 1
     return field_shape
 
