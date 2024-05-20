@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 from tqdm import tqdm
+import os
+import cv2
 
 
 class HornSchunck:
@@ -108,7 +110,7 @@ class HornSchunck:
         xx, yy = x[...].astype(np.uint16), y[...].astype(np.uint16)
 
         vx0, vy0 = u0[yy, xx], v0[yy, xx]
-        vectors = ax.quiver(x, y, vx0, vy0, color='black', scale=max_abs/100, units='xy')
+        vectors = ax.quiver(x, y, vx0, vy0, color='black', scale=0.1, units='xy')
 
         image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='turbo')
         fig.colorbar(image, ax=ax)
@@ -130,3 +132,62 @@ class HornSchunck:
             ani.save(f'../Test Data/{filename}', writer=writer)
 
         plt.show()
+
+
+
+class OpticalDataset(Dataset):
+    def __init__(self, folder, device):
+        # assume the files are sorted and all have the correct file type
+        filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
+        self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
+
+        self.device = device
+
+    def __len__(self):
+        return len(self.img_pairs)
+
+    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
+
+        if torch.is_tensor(index):
+            index = index.tolist()
+
+        pair = self.img_pairs[index]
+
+        img_b = cv2.imread(pair[1], cv2.IMREAD_GRAYSCALE)
+        img_a = cv2.imread(pair[0], cv2.IMREAD_GRAYSCALE)
+
+        cv2.imshow('before', img_b)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+        # https://wmich.edu/sites/default/files/attachments/u883/2017/Open_Optical_Flow_Paper_v1.pdf
+        img_a = cv2.GaussianBlur(img_a, (5, 5), 0.6*5)
+        img_b = cv2.GaussianBlur(img_b, (5, 5), 0.6*5)
+
+        img_a = torch.tensor(img_a, dtype=torch.float32, device=self.device)
+        img_b = torch.tensor(img_b, dtype=torch.float32, device=self.device)
+
+        # illumination correction https://link-springer-com.tudelft.idm.oclc.org/article/10.1007/s00348-015-2036-1
+        # https://github.com/Tianshu-Liu/OpenOpticalFlow/blob/master/correction_illumination.m
+        a_mean, b_mean = torch.mean(img_a).item(), torch.mean(img_b).item()
+        img_b *= (a_mean / b_mean)  # global illumination correction
+
+        # N = 1  # local illumination correction (N must be odd because of image padding in convolution)
+        # mean_filter = torch.ones((1, 1, N, N), device=self.device) / (N**2)
+        #
+        # padding = (int(N/2), int(N/2), int(N/2), int(N/2))
+        # img_a_pad, img_b_pad = pad(img_a, padding)[None, None, :, :], pad(img_b, padding)[None, None, :, :]
+        #
+        # local_diffs = conv2d(img_a_pad, mean_filter) - conv2d(img_b_pad, mean_filter)
+        #
+        # cv2.imshow('local', local_diffs.squeeze().cpu().numpy())
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        #
+        # img_b += local_diffs.squeeze()
+        #
+        cv2.imshow('after', img_b.to(torch.uint8).cpu().numpy())
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+        return img_a.to(torch.uint8), img_b.to(torch.uint8)

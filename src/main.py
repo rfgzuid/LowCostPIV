@@ -18,7 +18,7 @@ if __name__ == "__main__":
     # vid.show_frame(500)
     vid.create_frames()
 
-    processor = Processor(rf"Test Data/{fn}", df='.jpg', denoise=False, rescale=None, crop=False)
+    processor = Processor(rf"Test Data/{fn}", df='.jpg', denoise=True, rescale=None, crop=False)
     processor.postprocess()
 
     device = torch.cuda.get_device_name() if torch.cuda.is_available() else "cpu"

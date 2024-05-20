@@ -1,5 +1,5 @@
 from torchPIV.PIVbackend import ToTensor, PIVDataset
-from optical_flow_2021 import HornSchunck
+from optical_flow_2021 import HornSchunck, OpticalDataset
 
 import torch
 
@@ -13,8 +13,7 @@ if device == "cuda":
 image_dim = (1080, 1920)  # height, width
 grid_spacing = 20
 
-dataset = PIVDataset("../Test Data/cilinder_PROCESSED", ".jpg",
-                     "sequential", transform=ToTensor(dtype=torch.uint8))
+dataset = OpticalDataset("../Test Data/cilinder_PROCESSED", device)
 
 p = HornSchunck([dataset[0]], alpha=100, num_iter=100, device=device)
 p.optical_flow()
