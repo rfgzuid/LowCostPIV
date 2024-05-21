@@ -60,7 +60,7 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
 
 def correlation_to_displacement(
         corr: torch.Tensor,
-        n_rows, n_cols, interpolation_mode: int = 0):
+        n_rows, n_cols, correlation_mode: int = 0, interpolation_mode: int = 0):
     """
     Correlation maps are converted to displacement for
     each interrogation window
@@ -75,29 +75,18 @@ def correlation_to_displacement(
     """
     c, rows, cols = corr.shape
     cor = corr.view(c, -1).type(torch.float64)
-    m = corr.view(c, -1).argmin(-1, keepdim=True)  # correlation: argmax
-    left = m + 1
-    right = m - 1
-    top = m + cols
-    bot = m - cols
-    left[left >= cols * rows - 1] = m[left >= cols * rows - 1]  # dit was van torchpiv toch?
-    right[right <= 0] = m[right <= 0]
-    top[top >= cols * rows - 1] = m[top >= cols * rows - 1]
-    bot[bot <= 0] = m[bot <= 0]
-    # snap je deze notatie?
 
-    cm = torch.gather(cor, -1, m)  # correlation_middle, minimum
-    cl = torch.gather(cor, -1, left)  # cor_left
-    cr = torch.gather(cor, -1, right)  # cor_right
-    ct = torch.gather(cor, -1, top)  # cor_top
-    cb = torch.gather(cor, -1, bot)  # cor_bottom
+    if correlation_mode == 0:
+        m = corr.view(c, -1).argmax(-1, keepdim=True)  # correlation: argmax
+    elif correlation_mode == 1:
+        m = corr.view(c, -1).argmin(-1, keepdim=True)  # SAD: argmin
+    else:
+        raise ValueError("Mode must be either 0 or 1")
 
     row, col = torch.floor_divide(m, cols), torch.remainder(m, cols)
     neighbors = torch.zeros(c, 3, 3)
     neighbors_valid = np.ones(c)
-    # print(row, "col = ", col)
-    fig, ax = plt.subplots()
-    ax = plt.axes(projection='3d')
+
     for idx, field in enumerate(corr):
         min_idx = torch.argmin(field)
         max_idx = torch.argmax(field)
@@ -111,33 +100,19 @@ def correlation_to_displacement(
         # print(field[row_idx - 1:row_idx + 2, col_idx - 1:col_idx + 2])
         neighbors[idx] = torch.tensor(field[row_idx - 1:row_idx + 2, col_idx - 1:col_idx + 2])
 
-
-
     print(neighbors)
-    # X = np.arange(0, len(field), 1)
-    # Y = X.copy()
-    # X, Y = np.meshgrid(X, Y, copy=False)
-    # ax.plot_surface(X, Y, field)
-    # plt.show()
-    # ctl, ctr, cbl, cbr            # top left, top right, bottom left, bottom rightoh
-
-    # verander indices om ook de hoeken te krijgen, dus ctl, ctr, cbl, cbr
 
     nom1, nom2, den1, den2 = 0, 0, 1, 1
 
     # Gaussian interpolation
     if interpolation_mode == 0:
+        ct, cb, cl, cr, cm = (neighbors[:, 0, 1], neighbors[:, 2, 1], neighbors[:, 1, 0],
+                              neighbors[:, 1, 2], neighbors[:, 1, 1])
+
         nom1 = torch.log(cr) - torch.log(cl)
         den1 = 2 * (torch.log(cl) + torch.log(cr)) - 4 * torch.log(cm)
         nom2 = torch.log(cb) - torch.log(ct)
         den2 = 2 * (torch.log(cb) + torch.log(ct)) - 4 * torch.log(cm)
-
-    # regular interpolation (Gaussian interpolation without log)
-    elif interpolation_mode == 1:
-        nom1 = cr - cl
-        den1 = 2 * (cl + cr) - 4 * cm
-        nom2 = cb - ct
-        den2 = 2 * (cb + ct) - 4 * cm
 
     # SIV interpolation
     elif interpolation_mode == 2:
