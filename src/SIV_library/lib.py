@@ -26,7 +26,8 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     else:
         raise ValueError("Only mode 0 (correlation) or 1 (SAD) are supported")
 
-    return res
+    # normalized output
+    return res / (window_rows * window_cols)
 
 
 def match_to_displacement(matches: torch.Tensor):
@@ -58,76 +59,86 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
     ).reshape(-1, window_size + top + bottom, window_size + left + right)
 
 
-def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols,
-                                correlation_mode: int = 0, interpolation_mode: int = 0):
-
+def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 0):
     c, rows, cols = corr.shape
+    print(c)
 
-    if correlation_mode == 0:
+    eps = 1e-7
+    corr += eps
+
+    if mode == 0:
         m = corr.view(c, -1).argmax(-1, keepdim=True)  # correlation: argmax
-    elif correlation_mode == 1:
+    elif mode == 1:
         m = corr.view(c, -1).argmin(-1, keepdim=True)  # SAD: argmin
     else:
         raise ValueError("Mode must be either 0 or 1")
 
     row, col = torch.floor_divide(m, cols), torch.remainder(m, cols)
     neighbors = torch.zeros(c, 3, 3)
-    neighbors_valid = np.ones(c)
+
+    no_displacements = torch.zeros(c, dtype=torch.bool)
+    edge_cases = torch.zeros(c, dtype=torch.bool)
 
     for idx, field in enumerate(corr):
-        min_idx, max_idx = torch.argmin(field), torch.argmax(field)
-
-        if min_idx == max_idx:
-            neighbors_valid[idx] = 0.
-            continue
         row_idx, col_idx = row[idx].item(), col[idx].item()
-        if row_idx in [0, rows-1] or col_idx in [0, cols-1]:
-            neighbors_valid[idx] = 0.
+
+        # if flat field (e.g. a constant correlation of 0) then add a no displacement mask
+        if torch.argmin(field) == torch.argmax(field):
+            no_displacements[idx] = True
             continue
 
-        neighbors[idx] = torch.tensor(field[row_idx-1:row_idx+2, col_idx-1:col_idx+ ])
+        # if peak is at the edge, mask as edge case (no interpolation will be considered)
+        elif row_idx in [0, rows-1] or col_idx in [0, cols-1]:
+            edge_cases[idx] = True
+            continue
 
-    # Gaussian interpolation
-    if interpolation_mode == 0:
+        neighbors[idx] = torch.tensor(field[row_idx-1:row_idx+2, col_idx-1:col_idx+2])
+
+    # Gaussian interpolation for correlation
+    if mode == 0:
         ct, cb, cl, cr, cm = (neighbors[:, 0, 1], neighbors[:, 2, 1], neighbors[:, 1, 0],
                               neighbors[:, 1, 2], neighbors[:, 1, 1])
 
-        nom1 = torch.log(cr) - torch.log(cl)
-        den1 = 2 * (torch.log(cl) + torch.log(cr)) - 4 * torch.log(cm)
-        nom2 = torch.log(cb) - torch.log(ct)
-        den2 = 2 * (torch.log(cb) + torch.log(ct)) - 4 * torch.log(cm)
+        s_x = (torch.log(cl) - torch.log(cr)) / (2 * (torch.log(cl) + torch.log(cr)) - 4 * torch.log(cm))
+        s_y = (torch.log(cb) - torch.log(ct)) / (2 * (torch.log(cb) + torch.log(ct)) - 4 * torch.log(cm))
 
-    # SIV interpolation
-    elif interpolation_mode == 2:
-        # oke stel dat we de 3x3 grid hebben. dan worden X en Y dus de v en u componenten in de grid
-        x = np.array((cl, cm, cr))
-        y = np.array((ct, cm, cb))
-        X, Y = np.meshgrid(x, y, copy=False)
-        Z = cm  # ?
+        s_x[edge_cases], s_y[edge_cases] = 0., 0.
 
-        X = X.flatten()
-        Y = Y.flatten()
-        # A kan hetzelfde blijven omdat in de paper ook dezelfde soort polynomial wordt gebruikt
-        A = np.array([X * 0 + 1, X, Y, X ** 2, X ** 2 * Y, X ** 2 * Y ** 2, Y ** 2, X * Y ** 2, X * Y]).T
-        B = Z.flatten()
+    # Polynomial interpolation for SAD
+    if mode == 1:
+        # xx = torch.tensor([[-1, 0, 1],
+        #                    [-1, 0, 1],
+        #                    [-1, 0, 1]], dtype=torch.float32)
+        # yy = torch.tensor([[1, 1, 1],
+        #                    [0, 0, 0],
+        #                    [-1, -1, -1]], dtype=torch.float32)
+        # x, y = xx.flatten(), yy.flatten()
+        #
+        # # design matrix (https://www.youtube.com/watch?v=9Zve4NFBbSM)
+        # A = torch.stack((torch.ones_like(x), x, y, x*y, x**2, y**2)).T
+        #
+        # for idx, grid in enumerate(neighbors):
+        #     B = torch.flatten(grid)
+        #     res = torch.linalg.lstsq(A, B)
+        #
+        #     if torch.sum(grid).item() > 1:
+        #         print(idx)
 
-        coeff, r, rank, s = np.linalg.lstsq(A, B)
-        den2, den1 = 1, 1
-        nom1 = 1  # change to result for x
-        nom2 = 1  # change to result for y
-    nom1[neighbors_valid], nom2[neighbors_valid] = 0, 0
+        s_x, s_y = torch.zeros(c), torch.zeros(c)
 
     m2d = torch.cat((m // rows, m % cols), -1)
-    u = m2d[:, 1][:, None] + nom1 / den1
-    v = m2d[:, 0][:, None] + nom2 / den2
+    u = m2d[:, 1][:, None] + s_x[:, None]
+    v = m2d[:, 0][:, None] + s_y[:, None]
 
     default_peak_position = corr.shape[-2:]
-
     v = v - int(default_peak_position[0] / 2)
     u = u - int(default_peak_position[1] / 2)
 
+    u[no_displacements], v[no_displacements] = 0., 0.
+
     torch.nan_to_num_(v)
     torch.nan_to_num_(u)
+
     u = u.reshape(n_rows, n_cols).cpu().numpy()
     v = v.reshape(n_rows, n_cols).cpu().numpy()
 
@@ -148,16 +159,3 @@ def get_x_y(image_size, search_area_size, overlap):
     x = np.tile(x_single, shape[0])
     y = np.tile(y_single.reshape((shape[0], 1)), shape[1]).flatten()
     return x, y
-
-
-# TODO: fix flipping
-def plot_velocity_single_frame(img, x, y, u, v):
-    # vy, vx, y, x = np.reshape(field, (field.shape[0] * field.shape[1], 4)).T
-
-    # new_x = x/piv_gen._scale
-    # new_y = y/piv_gen._scale
-    # u = np.flip(u, axis=0)
-    # v = -v
-    plt.imshow(img, cmap='gray')
-    plt.quiver(x, y, u, v, color='red')
-    plt.show()
