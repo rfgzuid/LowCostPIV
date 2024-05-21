@@ -102,11 +102,9 @@ class HornSchunck:
 
         u0, v0 = velocities[0]
 
-        num_x, num_y = width // grid_spacing, height // grid_spacing
-
         # https://stackoverflow.com/questions/24116027/slicing-arrays-with-meshgrid-array-indices-in-numpy
-        x, y = np.meshgrid(np.linspace(grid_spacing, grid_spacing * num_x - grid_spacing, num_x + 1),
-                           np.linspace(grid_spacing, grid_spacing * num_y - grid_spacing, num_y + 1))
+        x, y = np.meshgrid(np.arange(grid_spacing, width - grid_spacing, grid_spacing),
+                           np.arange(grid_spacing, height - grid_spacing, grid_spacing))
         xx, yy = x[...].astype(np.uint16), y[...].astype(np.uint16)
 
         vx0, vy0 = u0[yy, xx], v0[yy, xx]
@@ -134,60 +132,29 @@ class HornSchunck:
         plt.show()
 
 
-
 class OpticalDataset(Dataset):
-    def __init__(self, folder, device):
+    def __init__(self, folder: str, ROI: tuple[int, int, int, int] | None, device):
         # assume the files are sorted and all have the correct file type
         filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
         self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
 
+        self.ROI = ROI  # slice images on coords (top, bottom, left, right)
         self.device = device
 
     def __len__(self):
         return len(self.img_pairs)
 
-    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
-
-        if torch.is_tensor(index):
-            index = index.tolist()
-
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         pair = self.img_pairs[index]
 
         img_b = cv2.imread(pair[1], cv2.IMREAD_GRAYSCALE)
         img_a = cv2.imread(pair[0], cv2.IMREAD_GRAYSCALE)
 
-        cv2.imshow('before', img_b)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        if self.ROI is not None:
+            img_a = img_a[self.ROI[0]:self.ROI[1], self.ROI[2]:self.ROI[3]]
+            img_b = img_b[self.ROI[0]:self.ROI[1], self.ROI[2]:self.ROI[3]]
 
-        # https://wmich.edu/sites/default/files/attachments/u883/2017/Open_Optical_Flow_Paper_v1.pdf
-        img_a = cv2.GaussianBlur(img_a, (5, 5), 0.6*5)
-        img_b = cv2.GaussianBlur(img_b, (5, 5), 0.6*5)
+        img_a = torch.tensor(img_a, dtype=torch.uint8, device=self.device)
+        img_b = torch.tensor(img_b, dtype=torch.uint8, device=self.device)
 
-        img_a = torch.tensor(img_a, dtype=torch.float32, device=self.device)
-        img_b = torch.tensor(img_b, dtype=torch.float32, device=self.device)
-
-        # illumination correction https://link-springer-com.tudelft.idm.oclc.org/article/10.1007/s00348-015-2036-1
-        # https://github.com/Tianshu-Liu/OpenOpticalFlow/blob/master/correction_illumination.m
-        a_mean, b_mean = torch.mean(img_a).item(), torch.mean(img_b).item()
-        img_b *= (a_mean / b_mean)  # global illumination correction
-
-        # N = 1  # local illumination correction (N must be odd because of image padding in convolution)
-        # mean_filter = torch.ones((1, 1, N, N), device=self.device) / (N**2)
-        #
-        # padding = (int(N/2), int(N/2), int(N/2), int(N/2))
-        # img_a_pad, img_b_pad = pad(img_a, padding)[None, None, :, :], pad(img_b, padding)[None, None, :, :]
-        #
-        # local_diffs = conv2d(img_a_pad, mean_filter) - conv2d(img_b_pad, mean_filter)
-        #
-        # cv2.imshow('local', local_diffs.squeeze().cpu().numpy())
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-        #
-        # img_b += local_diffs.squeeze()
-        #
-        cv2.imshow('after', img_b.to(torch.uint8).cpu().numpy())
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-        return img_a.to(torch.uint8), img_b.to(torch.uint8)
+        return img_a, img_b
