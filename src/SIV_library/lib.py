@@ -58,23 +58,10 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
     ).reshape(-1, window_size + top + bottom, window_size + left + right)
 
 
-def correlation_to_displacement(
-        corr: torch.Tensor,
-        n_rows, n_cols, correlation_mode: int = 0, interpolation_mode: int = 0):
-    """
-    Correlation maps are converted to displacement for
-    each interrogation window
-    Inputs:
-        corr : 3D torch.Tensor [channels, :, :]
-            contains output of the correlate_fft
-        n_rows, n_cols : number of interrogation windows, output of the
-            get_field_shape
-        validate: bool Flag for validation
-        val_ratio: int = 1.2 peak2peak validation coefficient
-        validation_window: int = 3 half of peak2peak validation window
-    """
+def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols,
+                                correlation_mode: int = 0, interpolation_mode: int = 0):
+
     c, rows, cols = corr.shape
-    cor = corr.view(c, -1).type(torch.float64)
 
     if correlation_mode == 0:
         m = corr.view(c, -1).argmax(-1, keepdim=True)  # correlation: argmax
@@ -88,21 +75,17 @@ def correlation_to_displacement(
     neighbors_valid = np.ones(c)
 
     for idx, field in enumerate(corr):
-        min_idx = torch.argmin(field)
-        max_idx = torch.argmax(field)
+        min_idx, max_idx = torch.argmin(field), torch.argmax(field)
+
         if min_idx == max_idx:
             neighbors_valid[idx] = 0.
             continue
         row_idx, col_idx = row[idx].item(), col[idx].item()
-        if row_idx in [0, field.shape[0] - 1] or col_idx in [0, field.shape[1] - 1]:
+        if row_idx in [0, rows-1] or col_idx in [0, cols-1]:
             neighbors_valid[idx] = 0.
             continue
-        # print(field[row_idx - 1:row_idx + 2, col_idx - 1:col_idx + 2])
-        neighbors[idx] = torch.tensor(field[row_idx - 1:row_idx + 2, col_idx - 1:col_idx + 2])
 
-    print(neighbors)
-
-    nom1, nom2, den1, den2 = 0, 0, 1, 1
+        neighbors[idx] = torch.tensor(field[row_idx-1:row_idx+2, col_idx-1:col_idx+ ])
 
     # Gaussian interpolation
     if interpolation_mode == 0:
@@ -139,12 +122,15 @@ def correlation_to_displacement(
     v = m2d[:, 0][:, None] + nom2 / den2
 
     default_peak_position = corr.shape[-2:]
+
     v = v - int(default_peak_position[0] / 2)
     u = u - int(default_peak_position[1] / 2)
+
     torch.nan_to_num_(v)
     torch.nan_to_num_(u)
     u = u.reshape(n_rows, n_cols).cpu().numpy()
     v = v.reshape(n_rows, n_cols).cpu().numpy()
+
     return u, v
 
 
