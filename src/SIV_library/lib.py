@@ -65,7 +65,7 @@ def correlation_to_displacement(
     Correlation maps are converted to displacement for
     each interrogation window
     Inputs:
-        corr : 3D torch.Tesnsor [channels, :, :]
+        corr : 3D torch.Tensor [channels, :, :]
             contains output of the correlate_fft
         n_rows, n_cols : number of interrogation windows, output of the
             get_field_shape
@@ -73,26 +73,53 @@ def correlation_to_displacement(
         val_ratio: int = 1.2 peak2peak validation coefficient
         validation_window: int = 3 half of peak2peak validation window
     """
-    c, d, k = corr.shape
+    c, rows, cols = corr.shape
     cor = corr.view(c, -1).type(torch.float64)
-    m = corr.view(c, -1).argmax(-1, keepdim=True)
+    m = corr.view(c, -1).argmin(-1, keepdim=True)  # correlation: argmax
     left = m + 1
     right = m - 1
-    top = m + k
-    bot = m - k
-    left[left >= k * d - 1] = m[left >= k * d - 1]
+    top = m + cols
+    bot = m - cols
+    left[left >= cols * rows - 1] = m[left >= cols * rows - 1]  # dit was van torchpiv toch?
     right[right <= 0] = m[right <= 0]
-    top[top >= k * d - 1] = m[top >= k * d - 1]
+    top[top >= cols * rows - 1] = m[top >= cols * rows - 1]
     bot[bot <= 0] = m[bot <= 0]
     # snap je deze notatie?
 
-    cm = torch.gather(cor, -1, m)
-    cl = torch.gather(cor, -1, left)
-    cr = torch.gather(cor, -1, right)
-    ct = torch.gather(cor, -1, top)
-    cb = torch.gather(cor, -1, bot)
+    cm = torch.gather(cor, -1, m)  # correlation_middle, minimum
+    cl = torch.gather(cor, -1, left)  # cor_left
+    cr = torch.gather(cor, -1, right)  # cor_right
+    ct = torch.gather(cor, -1, top)  # cor_top
+    cb = torch.gather(cor, -1, bot)  # cor_bottom
 
-    # ctl, ctr, cbl, cbr
+    row, col = torch.floor_divide(m, cols), torch.remainder(m, cols)
+    neighbors = torch.zeros(c, 3, 3)
+    neighbors_valid = np.ones(c)
+    # print(row, "col = ", col)
+    fig, ax = plt.subplots()
+    ax = plt.axes(projection='3d')
+    for idx, field in enumerate(corr):
+        min_idx = torch.argmin(field)
+        max_idx = torch.argmax(field)
+        if min_idx == max_idx:
+            neighbors_valid[idx] = 0.
+            continue
+        row_idx, col_idx = row[idx].item(), col[idx].item()
+        if row_idx in [0, field.shape[0] - 1] or col_idx in [0, field.shape[1] - 1]:
+            neighbors_valid[idx] = 0.
+            continue
+        # print(field[row_idx - 1:row_idx + 2, col_idx - 1:col_idx + 2])
+        neighbors[idx] = torch.tensor(field[row_idx - 1:row_idx + 2, col_idx - 1:col_idx + 2])
+
+
+
+    print(neighbors)
+    # X = np.arange(0, len(field), 1)
+    # Y = X.copy()
+    # X, Y = np.meshgrid(X, Y, copy=False)
+    # ax.plot_surface(X, Y, field)
+    # plt.show()
+    # ctl, ctr, cbl, cbr            # top left, top right, bottom left, bottom rightoh
 
     # verander indices om ook de hoeken te krijgen, dus ctl, ctr, cbl, cbr
 
@@ -114,15 +141,15 @@ def correlation_to_displacement(
 
     # SIV interpolation
     elif interpolation_mode == 2:
-
+        # oke stel dat we de 3x3 grid hebben. dan worden X en Y dus de v en u componenten in de grid
         x = np.array((cl, cm, cr))
         y = np.array((ct, cm, cb))
-        X, Y = np.meshgrid(x, y, copy=False)
         X, Y = np.meshgrid(x, y, copy=False)
         Z = cm  # ?
 
         X = X.flatten()
         Y = Y.flatten()
+        # A kan hetzelfde blijven omdat in de paper ook dezelfde soort polynomial wordt gebruikt
         A = np.array([X * 0 + 1, X, Y, X ** 2, X ** 2 * Y, X ** 2 * Y ** 2, Y ** 2, X * Y ** 2, X * Y]).T
         B = Z.flatten()
 
@@ -130,8 +157,9 @@ def correlation_to_displacement(
         den2, den1 = 1, 1
         nom1 = 1  # change to result for x
         nom2 = 1  # change to result for y
+    nom1[neighbors_valid], nom2[neighbors_valid] = 0, 0
 
-    m2d = torch.cat((m // d, m % k), -1)
+    m2d = torch.cat((m // rows, m % cols), -1)
     u = m2d[:, 1][:, None] + nom1 / den1
     v = m2d[:, 0][:, None] + nom2 / den2
 
