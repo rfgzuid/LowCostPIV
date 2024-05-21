@@ -30,12 +30,6 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     return res / (window_rows * window_cols)
 
 
-def match_to_displacement(matches: torch.Tensor):
-    count, rows, cols = matches.shape
-    res = matches.view(matches.shape[0], -1).argmax(-1, keepdim=True)
-    # print(res)
-
-
 def moving_reference_array(array: torch.Tensor, window_size, overlap,
                            left: int, right: int, top: int, bottom: int) -> torch.Tensor:
     padded = pad(array, (left, right, top, bottom))
@@ -61,7 +55,7 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
 
 def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 0):
     c, rows, cols = corr.shape
-    print(c)
+    print(c, 'windows')
 
     eps = 1e-7
     corr += eps
@@ -83,7 +77,7 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
         row_idx, col_idx = row[idx].item(), col[idx].item()
 
         # if flat field (e.g. a constant correlation of 0) then add a no displacement mask
-        if torch.argmin(field) == torch.argmax(field):
+        if torch.min(field) == torch.max(field):
             no_displacements[idx] = True
             continue
 
@@ -104,25 +98,46 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
 
         s_x[edge_cases], s_y[edge_cases] = 0., 0.
 
+    x, y = np.meshgrid(np.arange(-round(cols // 2), round(cols // 2) + 1, 1),
+                       np.arange(-round(rows // 2), round(rows // 2) + 1, 1))
+    fig, ax = plt.subplots()
+    ax = fig.add_subplot(projection='3d')
+    ax.plot_surface(x, y, corr[16], color='b', alpha=0.5, label='correlation')
+    plt.show()
+
     # Polynomial interpolation for SAD
     if mode == 1:
-        # xx = torch.tensor([[-1, 0, 1],
-        #                    [-1, 0, 1],
-        #                    [-1, 0, 1]], dtype=torch.float32)
-        # yy = torch.tensor([[1, 1, 1],
-        #                    [0, 0, 0],
-        #                    [-1, -1, -1]], dtype=torch.float32)
-        # x, y = xx.flatten(), yy.flatten()
-        #
-        # # design matrix (https://www.youtube.com/watch?v=9Zve4NFBbSM)
-        # A = torch.stack((torch.ones_like(x), x, y, x*y, x**2, y**2)).T
-        #
-        # for idx, grid in enumerate(neighbors):
-        #     B = torch.flatten(grid)
-        #     res = torch.linalg.lstsq(A, B)
-        #
-        #     if torch.sum(grid).item() > 1:
-        #         print(idx)
+        xx = torch.tensor([[-1, 0, 1],
+                           [-1, 0, 1],
+                           [-1, 0, 1]], dtype=torch.float32)
+        yy = torch.tensor([[1, 1, 1],
+                           [0, 0, 0],
+                           [-1, -1, -1]], dtype=torch.float32)
+        x, y = xx.flatten(), yy.flatten()
+
+        # design matrix (https://www.youtube.com/watch?v=9Zve4NFBbSM)
+        A = torch.stack((torch.ones_like(x), x, y, x*y, x**2, y**2)).T
+
+        for idx, grid in enumerate(neighbors):
+            B = torch.flatten(grid)
+            res = torch.linalg.lstsq(A, B)
+
+            if idx == 16:
+                a0, a1, a2, a3, a4, a5 = res.solution
+
+                xs, ys = np.linspace(-1, 1, 51), np.linspace(-1, 1, 51)
+                def surface(xi, yi):
+                    return a0 + a1*xi + a2*yi + a3*xi*yi + a4*xi**2 + a5*yi**2
+                heightmap = surface(xs[None, :], ys[:, None])
+                xs, ys = np.meshgrid(xs, ys)
+
+                x, y = np.meshgrid(np.arange(-1, 2, 1), np.arange(-1, 2, 1))
+
+                fig, ax = plt.subplots()
+                ax = fig.add_subplot(projection='3d')
+                ax.plot_surface(x, y, neighbors[idx], color='r', alpha=0.5, label='correlation')
+                ax.plot_surface(xs, ys, heightmap.reshape(51, 51), color='b', alpha=0.5, label='correlation')
+                plt.show()
 
         s_x, s_y = torch.zeros(c), torch.zeros(c)
 
