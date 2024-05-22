@@ -35,12 +35,8 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
     padded = pad(array, (left, right, top, bottom))
     shape = padded.shape
 
-    strides = (
-        shape[-1] * (window_size - overlap),
-        (window_size - overlap),
-        shape[-1],
-        1
-    )
+    strides = (shape[-1] * (window_size - overlap), (window_size - overlap), shape[-1], 1)
+
     shape = (
         int((shape[-2] - window_size - top - bottom) / (window_size - overlap)) + 1,
         int((shape[-1] - window_size - left - right) / (window_size - overlap)) + 1,
@@ -48,9 +44,8 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
         window_size + left + right,
     )
 
-    return torch.as_strided(
-        padded, size=shape, stride=strides
-    ).reshape(-1, window_size + top + bottom, window_size + left + right)
+    return (torch.as_strided(padded, size=shape, stride=strides)
+            .reshape(-1, window_size + top + bottom, window_size + left + right))
 
 
 def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 0):
@@ -98,13 +93,6 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
 
         s_x[edge_cases], s_y[edge_cases] = 0., 0.
 
-    x, y = np.meshgrid(np.arange(-round(cols // 2), round(cols // 2) + 1, 1),
-                       np.arange(-round(rows // 2), round(rows // 2) + 1, 1))
-    fig, ax = plt.subplots()
-    ax = fig.add_subplot(projection='3d')
-    ax.plot_surface(x, y, corr[16], color='b', alpha=0.5, label='correlation')
-    plt.show()
-
     # Polynomial interpolation for SAD
     if mode == 1:
         xx = torch.tensor([[-1, 0, 1],
@@ -117,43 +105,25 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
 
         # design matrix (https://www.youtube.com/watch?v=9Zve4NFBbSM)
         A = torch.stack((torch.ones_like(x), x, y, x*y, x**2, y**2)).T
+        A = A.unsqueeze(0).repeat(c, 1, 1)
 
-        for idx, grid in enumerate(neighbors):
-            B = torch.flatten(grid)
-            res = torch.linalg.lstsq(A, B)
+        B = neighbors.flatten(start_dim=1)
+        res = torch.linalg.lstsq(A, B)
+        coefs = res.solution
 
-            if idx == 14:
-                a0, a1, a2, a3, a4, a5 = res.solution
+        a0, a1, a2, a3, a4, a5 = coefs[:, 0], coefs[:, 1], coefs[:, 2], coefs[:, 3], coefs[:, 4], coefs[:, 5]
+        a = torch.stack([torch.stack([2*a4, a3], dim=1), torch.stack([a3, 2*a5], dim=1)], dim=2)
 
-                a = torch.tensor([[2*a4, a3], [a3, 2*a5]])
-                b = -torch.tensor([a1, a2])
-                min_loc = torch.linalg.inv(a) @ b
+        ranks = torch.linalg.matrix_rank(a)
+        singular = torch.where(ranks != 2, True, False)
 
-                print(grid, min_loc)
+        min_locs = torch.zeros([c, 2])
 
-                xs, ys = np.linspace(-1, 1, 51), np.linspace(-1, 1, 51)
-                def surface(xi, yi):
-                    return a0 + a1*xi + a2*yi + a3*xi*yi + a4*xi**2 + a5*yi**2
-                heightmap = surface(xs[None, :], ys[:, None])
-                xs, ys = np.meshgrid(xs, ys)
+        b = torch.stack([-a1, -a2], dim=1)
+        min_locs[~singular] = torch.linalg.solve(a[~singular], b[~singular])
 
-                min_height = surface(*min_loc)
-
-                x, y = np.meshgrid(np.arange(-1, 2, 1), np.arange(-1, 2, 1))
-
-                fig, ax = plt.subplots()
-                ax = fig.add_subplot(projection='3d')
-
-                ax.plot_surface(x, -y, neighbors[idx], color='r', alpha=0.5, label='correlation')
-                ax.plot_surface(xs, ys, heightmap.reshape(51, 51), color='b', alpha=0.5, label='correlation')
-
-                ax.scatter(*min_loc, min_height, color='g')
-
-                ax.set_xlabel('x')
-                ax.set_ylabel('y')
-                plt.show()
-
-        s_x, s_y = torch.zeros(c), torch.zeros(c)
+        s_x, s_y = min_locs[:, 0], min_locs[:, 1]
+        s_x[edge_cases], s_y[edge_cases] = 0., 0.
 
     m2d = torch.cat((m // rows, m % cols), -1)
     u = m2d[:, 1][:, None] + s_x[:, None]
@@ -175,9 +145,7 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
 
 
 def get_field_shape(image_size, search_area_size, overlap):
-    field_shape = (np.array(image_size) - search_area_size) // (
-            search_area_size - overlap
-    ) + 1
+    field_shape = (np.array(image_size) - search_area_size) // (search_area_size - overlap) + 1
     return field_shape
 
 
