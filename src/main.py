@@ -8,17 +8,17 @@ import os
 
 
 if __name__ == "__main__":
-    video_file = "SmokeVideo.MOV"
+    video_file = "Cilinder.MOV"
     fn = video_file.split(".")[0]
 
     # reference frame specified first, then the range we want to analyse with SIV
-    # frames = [0, *(i for i in range(300, 400))]
+    frames = [0, *(i for i in range(225, 351))]
 
-    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=None)
+    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=frames)
     # vid.show_frame(500)
     vid.create_frames()
 
-    processor = Processor(rf"Test Data/{fn}", df='.jpg', denoise=False, rescale=None, crop=False)
+    processor = Processor(rf"Test Data/{fn}", df='.jpg', denoise=True, rescale=None, crop=False)
     processor.postprocess()
 
     device = torch.cuda.get_device_name() if torch.cuda.is_available() else "cpu"
