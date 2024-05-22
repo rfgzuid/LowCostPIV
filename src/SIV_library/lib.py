@@ -122,8 +122,14 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
             B = torch.flatten(grid)
             res = torch.linalg.lstsq(A, B)
 
-            if idx == 16:
+            if idx == 14:
                 a0, a1, a2, a3, a4, a5 = res.solution
+
+                a = torch.tensor([[2*a4, a3], [a3, 2*a5]])
+                b = -torch.tensor([a1, a2])
+                min_loc = torch.linalg.inv(a) @ b
+
+                print(grid, min_loc)
 
                 xs, ys = np.linspace(-1, 1, 51), np.linspace(-1, 1, 51)
                 def surface(xi, yi):
@@ -131,12 +137,20 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
                 heightmap = surface(xs[None, :], ys[:, None])
                 xs, ys = np.meshgrid(xs, ys)
 
+                min_height = surface(*min_loc)
+
                 x, y = np.meshgrid(np.arange(-1, 2, 1), np.arange(-1, 2, 1))
 
                 fig, ax = plt.subplots()
                 ax = fig.add_subplot(projection='3d')
-                ax.plot_surface(x, y, neighbors[idx], color='r', alpha=0.5, label='correlation')
+
+                ax.plot_surface(x, -y, neighbors[idx], color='r', alpha=0.5, label='correlation')
                 ax.plot_surface(xs, ys, heightmap.reshape(51, 51), color='b', alpha=0.5, label='correlation')
+
+                ax.scatter(*min_loc, min_height, color='g')
+
+                ax.set_xlabel('x')
+                ax.set_ylabel('y')
                 plt.show()
 
         s_x, s_y = torch.zeros(c), torch.zeros(c)
