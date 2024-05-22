@@ -1,7 +1,10 @@
 from torch.nn.functional import conv2d, pad
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
+
+from torch.utils.data import Dataset
+import os
+import cv2
 
 from tqdm import tqdm
 
@@ -13,12 +16,12 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     res = torch.zeros((count, area_rows - window_rows + 1, area_cols - window_cols + 1))
 
     if mode == 0:  # correlation mode
-        for idx, (window, area) in tqdm(enumerate(zip(windows, areas)), total=count):
+        for idx, (window, area) in tqdm(enumerate(zip(windows, areas)), total=count, desc='Correlation'):
             corr = conv2d(area.unsqueeze(0).unsqueeze(0), window.unsqueeze(0).unsqueeze(0), stride=1)
             res[idx] = corr
 
     elif mode == 1:  # SAD mode
-        for j in tqdm(range(area_rows - window_rows + 1)):
+        for j in tqdm(range(area_rows - window_rows + 1), desc='SAD'):
             for i in range(area_cols - window_cols + 1):
                 ref = areas[:, j:j + window_rows, i:i + window_cols]
                 res[:, j, i] = torch.sum(torch.abs(windows - ref), dim=(1, 2))
@@ -30,9 +33,12 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     return res / (window_rows * window_cols)
 
 
-def moving_reference_array(array: torch.Tensor, window_size, overlap,
-                           left: int, right: int, top: int, bottom: int) -> torch.Tensor:
-    padded = pad(array, (left, right, top, bottom))
+def moving_window_array(array: torch.Tensor, window_size, overlap,
+                           area: tuple[int, int, int, int] | None = None) -> torch.Tensor:
+    if area is None:
+        area = (0, 0, 0, 0)
+    left, right, top, bottom = area
+    padded = pad(array, area)
     shape = padded.shape
 
     strides = (shape[-1] * (window_size - overlap), (window_size - overlap), shape[-1], 1)
@@ -50,7 +56,6 @@ def moving_reference_array(array: torch.Tensor, window_size, overlap,
 
 def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 0):
     c, rows, cols = corr.shape
-    print(c, 'windows')
 
     eps = 1e-7
     corr += eps
@@ -70,14 +75,15 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
 
     for idx, field in enumerate(corr):
         row_idx, col_idx = row[idx].item(), col[idx].item()
+        peak_val = torch.max(field) if mode == 0 else torch.min(field)
 
-        # if flat field (e.g. a constant correlation of 0) then add a no displacement mask
-        if torch.min(field) == torch.max(field):
+        # if multiple peak vals exist (e.g. flat field) the displacement is undetermined (set to 0)
+        if rows * cols - torch.count_nonzero(field - peak_val) > 1:
             no_displacements[idx] = True
             continue
 
         # if peak is at the edge, mask as edge case (no interpolation will be considered)
-        elif row_idx in [0, rows-1] or col_idx in [0, cols-1]:
+        if row_idx in [0, rows-1] or col_idx in [0, cols-1]:
             edge_cases[idx] = True
             continue
 
@@ -133,7 +139,7 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
     v = v - int(default_peak_position[0] / 2)
     u = u - int(default_peak_position[1] / 2)
 
-    u[no_displacements], v[no_displacements] = 0., 0.
+    u[no_displacements], v[no_displacements] = torch.nan, torch.nan
 
     torch.nan_to_num_(v)
     torch.nan_to_num_(u)
@@ -156,3 +162,30 @@ def get_x_y(image_size, search_area_size, overlap):
     x = np.tile(x_single, shape[0])
     y = np.tile(y_single.reshape((shape[0], 1)), shape[1]).flatten()
     return x, y
+
+
+class SIVDataset(Dataset):
+    def __init__(self, folder: str, ROI: tuple[int, int, int, int] | None):
+        # assume the files are sorted and all have the correct file type
+        filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
+        self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
+
+        self.ROI = ROI  # slice images on coords (top, bottom, left, right)
+
+    def __len__(self):
+        return len(self.img_pairs)
+
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        pair = self.img_pairs[index]
+
+        img_b = cv2.imread(pair[1], cv2.IMREAD_GRAYSCALE)
+        img_a = cv2.imread(pair[0], cv2.IMREAD_GRAYSCALE)
+
+        if self.ROI is not None:
+            img_a = img_a[self.ROI[0]:self.ROI[1], self.ROI[2]:self.ROI[3]]
+            img_b = img_b[self.ROI[0]:self.ROI[1], self.ROI[2]:self.ROI[3]]
+
+        img_a = torch.tensor(img_a, dtype=torch.uint8)
+        img_b = torch.tensor(img_b, dtype=torch.uint8)
+
+        return img_a, img_b
