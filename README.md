@@ -8,7 +8,7 @@ All code is implemented using the PyTorch library, which enables Cuda GPU accele
 
 Note that for optical flow, **no** pyramidal coarse-to-fine structure is implemented. This makes the method inaccurate for large pixel displacements. The optical flow method by Liu-Shen [...] proves to be more effective.
 
-The SIV method is based on Sum of Absolute Difference (SAD) template matching and could be accelerated with this pyramidal structure.
+The SIV method is based on Sum of Absolute Difference (SAD) template matching and could be accelerated with this pyramidal structure. Also, a correlation-based template matching mode can be enabled.
 
 ***
 # Example of usage
