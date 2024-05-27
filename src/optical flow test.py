@@ -1,4 +1,4 @@
-from optical_flow_2021 import HornSchunck, OpticalDataset
+from src.SIV_library.optical_flow_2021 import HornSchunck, OpticalDataset
 import torch
 
 device = "cuda" if torch.cuda.is_available() else "cpu"

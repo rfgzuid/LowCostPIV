@@ -8,7 +8,7 @@ import os
 
 
 if __name__ == "__main__":
-    video_file = "Cilinder.MOV"
+    video_file = "plume simulation.mp4"
     fn = video_file.split(".")[0]
 
     # reference frame specified first, then the range we want to analyse with SIV

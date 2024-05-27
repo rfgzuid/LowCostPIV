@@ -130,31 +130,3 @@ class HornSchunck:
             ani.save(f'../Test Data/{filename}', writer=writer)
 
         plt.show()
-
-
-class OpticalDataset(Dataset):
-    def __init__(self, folder: str, ROI: tuple[int, int, int, int] | None, device):
-        # assume the files are sorted and all have the correct file type
-        filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
-        self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
-
-        self.ROI = ROI  # slice images on coords (top, bottom, left, right)
-        self.device = device
-
-    def __len__(self):
-        return len(self.img_pairs)
-
-    def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        pair = self.img_pairs[index]
-
-        img_b = cv2.imread(pair[1], cv2.IMREAD_GRAYSCALE)
-        img_a = cv2.imread(pair[0], cv2.IMREAD_GRAYSCALE)
-
-        if self.ROI is not None:
-            img_a = img_a[self.ROI[0]:self.ROI[1], self.ROI[2]:self.ROI[3]]
-            img_b = img_b[self.ROI[0]:self.ROI[1], self.ROI[2]:self.ROI[3]]
-
-        img_a = torch.tensor(img_a, dtype=torch.uint8, device=self.device)
-        img_b = torch.tensor(img_b, dtype=torch.uint8, device=self.device)
-
-        return img_a, img_b

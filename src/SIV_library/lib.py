@@ -7,6 +7,7 @@ import os
 import cv2
 
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 
 def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
@@ -87,6 +88,15 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
             edge_cases[idx] = True
             continue
 
+        if mode == 0:
+            x, y = np.meshgrid(np.arange(-round(cols // 2), round(cols // 2) + 1, 1),
+                               np.arange(-round(rows // 2), round(rows // 2) + 1, 1))
+            fig, ax = plt.subplots()
+            ax = fig.add_subplot(projection='3d')
+            ax.plot_surface(x, y, field.numpy(), color='b', alpha=0.5, label='correlation')
+            ax.scatter(col_idx-cols/2, row_idx-rows/2, peak_val, color='r')
+            plt.show()
+
         neighbors[idx] = torch.tensor(field[row_idx-1:row_idx+2, col_idx-1:col_idx+2])
 
     # Gaussian interpolation for correlation
@@ -132,6 +142,8 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
         s_x[edge_cases], s_y[edge_cases] = 0., 0.
 
     m2d = torch.cat((m // rows, m % cols), -1)
+
+    s_x[:], s_y[:] = 0., 0.
     u = m2d[:, 1][:, None] + s_x[:, None]
     v = m2d[:, 0][:, None] + s_y[:, None]
 
