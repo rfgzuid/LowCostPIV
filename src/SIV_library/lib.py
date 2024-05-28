@@ -93,7 +93,7 @@ class OpticalFlow:
                 x, y = torch.meshgrid(torch.arange(0, cols, 1),torch.arange(0, rows, 1))
 
                 for k in range(self.multipass):
-                    scale = self.multipass_scale ** (k - self.multipass - 3)
+                    scale = self.multipass_scale ** (k - self.multipass + 1)
                     new_size = (round(img_a.shape[1] * scale), round(img_a.shape[0] * scale))
 
                     # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
@@ -107,18 +107,18 @@ class OpticalFlow:
                     resize = Resize(new_size, InterpolationMode.BILINEAR)
                     a, b = resize(img_a_new[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
 
-                    cv2.imshow(f'src - {rows*scale}x{cols*scale}', cv2.resize(img_a.numpy(), (500, 500)))
+                    cv2.imshow('src', cv2.resize(img_a.numpy(), (500, 500)))
                     cv2.waitKey(0)
                     cv2.imshow('warped', cv2.resize(a.numpy(), (500, 500)))
                     cv2.waitKey(0)
-                    cv2.imshow('target', cv2.resize(b.numpy(), (500, 500)))
+                    cv2.imshow(f'target - {rows*scale}x{cols*scale}', cv2.resize(b.numpy(), (500, 500)))
                     cv2.waitKey(0)
                     cv2.destroyAllWindows()
 
                     du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
 
-                    du = interpolate(du[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
-                    dv = interpolate(dv[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
+                    du = interpolate(du[None, None, :, :], img_a.shape, mode='nearest').squeeze()
+                    dv = interpolate(dv[None, None, :, :], img_a.shape, mode='nearest').squeeze()
 
                     u, v = u + du/scale, v + dv/scale
         return x, y, u, -v
