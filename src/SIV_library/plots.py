@@ -25,6 +25,7 @@ def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
     image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='turbo')
 
     ax.set_axis_off()
+    ax.set_title("Optical Flow")
     fig.colorbar(image, ax=ax)
 
     def update(idx):
@@ -34,7 +35,7 @@ def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
         vx, vy = ui[yy, xx], vi[yy, xx]
         vectors.set_UVC(vx, vy)
 
-        ax.set_title(f"t = {idx / 240:.3f} s")
+        ax.set_title(f"t = {idx/240:.3f} s")
         return image, vectors
 
     ani = animation.FuncAnimation(fig=fig, func=update, frames=u.shape[0], interval=100)

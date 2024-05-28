@@ -85,10 +85,8 @@ class OpticalFlow:
         for idx, data in enumerate(self.dataset):
             if idx == 0:
                 img_a, img_b = data
-                img_a = torch.roll(img_a, (50, 50), dims=(0, 1))
                 rows, cols = img_a.shape[-2:]
 
-                # u, v = torch.ones_like(img_a)*500, torch.ones_like(img_b)*-300
                 u, v = torch.zeros_like(img_a), torch.zeros_like(img_b)
                 x, y = torch.meshgrid(torch.arange(0, cols, 1),torch.arange(0, rows, 1))
 
@@ -107,18 +105,10 @@ class OpticalFlow:
                     resize = Resize(new_size, InterpolationMode.BILINEAR)
                     a, b = resize(img_a_new[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
 
-                    cv2.imshow('src', cv2.resize(img_a.numpy(), (500, 500)))
-                    cv2.waitKey(0)
-                    cv2.imshow('warped', cv2.resize(a.numpy(), (500, 500)))
-                    cv2.waitKey(0)
-                    cv2.imshow(f'target - {rows*scale}x{cols*scale}', cv2.resize(b.numpy(), (500, 500)))
-                    cv2.waitKey(0)
-                    cv2.destroyAllWindows()
-
                     du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
 
-                    du = interpolate(du[None, None, :, :], img_a.shape, mode='nearest').squeeze()
-                    dv = interpolate(dv[None, None, :, :], img_a.shape, mode='nearest').squeeze()
+                    du = interpolate(du[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
+                    dv = interpolate(dv[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
 
                     u, v = u + du/scale, v + dv/scale
         return x, y, u, -v
