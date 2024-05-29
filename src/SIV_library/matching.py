@@ -3,6 +3,7 @@ import torch
 import numpy as np
 
 from tqdm import tqdm
+import cv2
 
 
 def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
@@ -57,10 +58,32 @@ def search_array(array: torch.Tensor, window_size, overlap,
 
     for j in range(iters[0]):
         for i in range(iters[1]):
-            offset_x, offset_y = int(offsets[0, i, j]), int(offsets[1, i, j])
+            offset_x, offset_y = int(offsets[0, j, i]), int(offsets[1, j, i])
             area = array[j*overlap+offset_y+dy_max:j*overlap+window_size+top+bottom+offset_y+dy_max,
                          i*overlap+offset_x+dx_max:i*overlap+window_size+left+right+offset_x+dx_max]
             areas[i+j*iters[1], :, :] = area
+
+            if i + j*iters[1] == 1541:
+                print(offset_x, offset_y)
+
+                ref = array.clone().numpy()
+                start1 = (i*overlap+offset_x+dx_max,
+                          j*overlap+offset_y+dy_max)
+                end1 = (i*overlap+window_size+left+right+offset_x+dx_max,
+                        j*overlap+window_size+top+bottom+offset_y+dy_max)
+                ref = cv2.rectangle(ref, start1, end1, (255, 255, 255), 3)
+
+                start2 = (i * overlap + dx_max + left,
+                          j * overlap + dy_max + top)
+                end2 = (i * overlap + window_size + dx_max + right,
+                        j * overlap + window_size + dy_max + bottom)
+                ref = cv2.rectangle(ref, start2, end2, (255, 255, 255), 3)
+
+                ref = cv2.resize(ref, (500, 500))
+
+                cv2.imshow(f'{array.shape}', ref)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
     return areas
 
 

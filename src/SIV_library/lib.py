@@ -1,15 +1,13 @@
 from .matching import window_array, search_array, get_field_shape, block_match, get_x_y, correlation_to_displacement
 from .optical_flow import optical_flow
 
-from torch.nn.functional import conv2d, pad, grid_sample, interpolate
+from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
 import torch
 
 from torch.utils.data import Dataset
 import os
 import cv2
-
-import matplotlib.pyplot as plt
 
 
 class SIVDataset(Dataset):
@@ -28,10 +26,17 @@ class SIVDataset(Dataset):
 
 
 class SIV:
-    def __init__(self, folder: str, device: torch.device="cpu",
-                 window_size: int=128, overlap: int=64, search_area: tuple[int, int, int, int]=(0, 0, 0, 0),
-                 multipass: int=1, multipass_scale: float=2.,
-                 dt: float=1/240) -> None:
+    def __init__(self,
+                 folder: str,
+                 device: torch.device = "cpu",
+                 window_size: int = 128,
+                 overlap: int = 64,
+                 search_area: tuple[int, int, int, int] = (0, 0, 0, 0),
+                 multipass: int = 1,
+                 multipass_scale: float = 2.,
+                 dt: float = 1/240
+                 ) -> None:
+
         self.dataset = SIVDataset(folder=folder)
         self.device = device
         self.window_size, self.overlap, self.search_area = window_size, overlap, search_area
@@ -44,7 +49,6 @@ class SIV:
             img_a, img_b = img_a.to(self.device), img_b.to(self.device)
 
             n_rows, n_cols = get_field_shape(img_a.shape, self.window_size, self.overlap)
-
             u, v = torch.zeros((n_rows, n_cols)), torch.zeros((n_rows, n_cols))
 
             for k in range(self.multipass):
@@ -63,18 +67,34 @@ class SIV:
                 window = window_array(a, window_size, overlap)
                 area = search_array(b, window_size, overlap, area=self.search_area, offsets=offset)
 
+                cv2.imshow('w', window[1541].numpy())
+                cv2.waitKey(0)
+                cv2.imshow('a', area[1541].numpy())
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+
                 match = block_match(window, area, mode)
                 du, dv = correlation_to_displacement(match, n_rows, n_cols, mode)
 
-                u, v = u + du*self.multipass_scale, v + dv*self.multipass_scale
+                if k != self.multipass - 1:
+                    u, v = (u + du)*self.multipass_scale, (v + dv)*self.multipass_scale  # upscale for next pass
+                else:
+                    u, v = u + du, v + dv
         return x, y, u, -v
 
 
 class OpticalFlow:
-    def __init__(self, folder: str=None, device: torch.device="cpu",
-                 multipass: int=1, multipass_scale: float=2.,
-                 alpha: float=1000., num_iter: int=100, eps: float=1e-5,
-                 dt: float=1/240) -> None:
+    def __init__(self,
+                 folder: str = None,
+                 device: torch.device = "cpu",
+                 multipass: int = 1,
+                 multipass_scale: float = 2.,
+                 alpha: float = 1000.,
+                 num_iter: int = 100,
+                 eps: float = 1e-5,
+                 dt: float = 1/240
+                 ) -> None:
+
         self.dataset = SIVDataset(folder=folder)
         self.device = device
         self.multipass, self.multipass_scale = multipass, multipass_scale
@@ -88,7 +108,7 @@ class OpticalFlow:
                 rows, cols = img_a.shape[-2:]
 
                 u, v = torch.zeros_like(img_a), torch.zeros_like(img_b)
-                x, y = torch.meshgrid(torch.arange(0, cols, 1),torch.arange(0, rows, 1))
+                x, y = torch.meshgrid(torch.arange(0, cols, 1), torch.arange(0, rows, 1), indexing='ij')
 
                 for k in range(self.multipass):
                     scale = self.multipass_scale ** (k - self.multipass + 1)
@@ -100,7 +120,7 @@ class OpticalFlow:
                     grid = torch.stack((yy, xx), dim=2).unsqueeze(0)
                     v_grid = grid + torch.stack((-u/(cols/2), -v/(rows/2)), dim=2)
                     src = img_a[None, None, :, :].float()
-                    img_a_new = grid_sample(src, v_grid, mode='bilinear').squeeze().to(torch.uint8)
+                    img_a_new = grid_sample(src, v_grid, mode='bilinear', align_corners=False).squeeze().to(torch.uint8)
 
                     resize = Resize(new_size, InterpolationMode.BILINEAR)
                     a, b = resize(img_a_new[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()

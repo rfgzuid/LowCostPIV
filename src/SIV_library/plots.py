@@ -20,7 +20,7 @@ def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
     xx, yy = x[...].astype(np.uint16), y[...].astype(np.uint16)
 
     vx0, vy0 = u0[yy, xx], v0[yy, xx]
-    vectors = ax.quiver(x, y, vx0, vy0, color='red', scale=1, units='dots')
+    vectors = ax.quiver(x, y, vx0, -vy0, color='red', scale=1, scale_units='xy', angles='xy')
 
     image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='turbo')
 
@@ -33,7 +33,7 @@ def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
 
         ui, vi = u[idx], v[idx]
         vx, vy = ui[yy, xx], vi[yy, xx]
-        vectors.set_UVC(vx, vy)
+        vectors.set_UVC(vx, -vy)
 
         ax.set_title(f"t = {idx/240:.3f} s")
         return image, vectors
