@@ -67,12 +67,6 @@ class SIV:
                 window = window_array(a, window_size, overlap)
                 area = search_array(b, window_size, overlap, area=self.search_area, offsets=offset)
 
-                cv2.imshow('w', window[1541].numpy())
-                cv2.waitKey(0)
-                cv2.imshow('a', area[1541].numpy())
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
-
                 match = block_match(window, area, mode)
                 du, dv = correlation_to_displacement(match, n_rows, n_cols, mode)
 

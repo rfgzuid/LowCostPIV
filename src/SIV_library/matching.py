@@ -54,7 +54,8 @@ def search_array(array: torch.Tensor, window_size, overlap,
     padding = (left + dx_max, right + dx_max, top + dy_max, bottom + dy_max)
     array = pad(array, padding)
 
-    areas = torch.zeros((iters[0]*iters[1], window_size+top+bottom, window_size+left+right), dtype=torch.uint8)
+    areas = torch.zeros((iters[0]*iters[1], window_size+top+bottom, window_size+left+right),
+                        dtype=torch.uint8, device=array.device)
 
     for j in range(iters[0]):
         for i in range(iters[1]):
@@ -62,28 +63,6 @@ def search_array(array: torch.Tensor, window_size, overlap,
             area = array[j*overlap+offset_y+dy_max:j*overlap+window_size+top+bottom+offset_y+dy_max,
                          i*overlap+offset_x+dx_max:i*overlap+window_size+left+right+offset_x+dx_max]
             areas[i+j*iters[1], :, :] = area
-
-            if i + j*iters[1] == 1541:
-                print(offset_x, offset_y)
-
-                ref = array.clone().numpy()
-                start1 = (i*overlap+offset_x+dx_max,
-                          j*overlap+offset_y+dy_max)
-                end1 = (i*overlap+window_size+left+right+offset_x+dx_max,
-                        j*overlap+window_size+top+bottom+offset_y+dy_max)
-                ref = cv2.rectangle(ref, start1, end1, (255, 255, 255), 3)
-
-                start2 = (i * overlap + dx_max + left,
-                          j * overlap + dy_max + top)
-                end2 = (i * overlap + window_size + dx_max + right,
-                        j * overlap + window_size + dy_max + bottom)
-                ref = cv2.rectangle(ref, start2, end2, (255, 255, 255), 3)
-
-                ref = cv2.resize(ref, (500, 500))
-
-                cv2.imshow(f'{array.shape}', ref)
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
     return areas
 
 
