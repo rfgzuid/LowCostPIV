@@ -10,7 +10,7 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     windows, areas = windows.float(), areas.float()
     (count, window_rows, window_cols), (area_rows, area_cols) = windows.shape, areas.shape[-2:]
 
-    res = torch.zeros((count, area_rows - window_rows + 1, area_cols - window_cols + 1))
+    res = torch.zeros((count, area_rows - window_rows + 1, area_cols - window_cols + 1), device=windows.device)
 
     if mode == 0:  # correlation mode
         for idx, (window, area) in tqdm(enumerate(zip(windows, areas)), total=count, desc='Correlation'):
@@ -68,6 +68,7 @@ def search_array(array: torch.Tensor, window_size, overlap,
 
 def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 0):
     c, rows, cols = corr.shape
+    device = corr.device
 
     eps = 1e-7
     corr += eps
@@ -80,10 +81,10 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
         raise ValueError("Mode must be either 0 or 1")
 
     row, col = torch.floor_divide(m, cols), torch.remainder(m, cols)
-    neighbors = torch.zeros(c, 3, 3)
+    neighbors = torch.zeros(c, 3, 3).to(device)
 
-    no_displacements = torch.zeros(c, dtype=torch.bool)
-    edge_cases = torch.zeros(c, dtype=torch.bool)
+    no_displacements = torch.zeros(c, dtype=torch.bool, device=device)
+    edge_cases = torch.zeros(c, dtype=torch.bool, device=device)
 
     for idx, field in enumerate(corr):
         row_idx, col_idx = row[idx].item(), col[idx].item()
@@ -115,13 +116,13 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
     if mode == 1:
         xx = torch.tensor([[-1, 0, 1],
                            [-1, 0, 1],
-                           [-1, 0, 1]], dtype=torch.float32)
+                           [-1, 0, 1]], dtype=torch.float32, device=device)
         yy = torch.tensor([[1, 1, 1],
                            [0, 0, 0],
-                           [-1, -1, -1]], dtype=torch.float32)
+                           [-1, -1, -1]], dtype=torch.float32, device=device)
         x, y = xx.flatten(), yy.flatten()
 
-        # design matrix (https://www.youtube.com/watch?v=9Zve4NFBbSM)
+        # Least Squares method (https://www.youtube.com/watch?v=9Zve4NFBbSM)
         A = torch.stack((torch.ones_like(x), x, y, x*y, x**2, y**2)).T
         A = A.unsqueeze(0).repeat(c, 1, 1)
 
@@ -130,12 +131,14 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
         coefs = res.solution
 
         a0, a1, a2, a3, a4, a5 = coefs[:, 0], coefs[:, 1], coefs[:, 2], coefs[:, 3], coefs[:, 4], coefs[:, 5]
-        a = torch.stack([torch.stack([2*a4, a3], dim=1), torch.stack([a3, 2*a5], dim=1)], dim=2)
+        a = torch.stack([torch.stack([2*a4, a3], dim=1),
+                         torch.stack([a3, 2*a5], dim=1)],
+                        dim=2)
 
         ranks = torch.linalg.matrix_rank(a)
         singular = torch.where(ranks != 2, True, False)
 
-        min_locs = torch.zeros([c, 2])
+        min_locs = torch.zeros([c, 2], device=device)
 
         b = torch.stack([-a1, -a2], dim=1)
         min_locs[~singular] = torch.linalg.solve(a[~singular], b[~singular])
@@ -168,14 +171,14 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
 
 
 def get_field_shape(image_size, search_area_size, overlap):
-    field_shape = (np.array(image_size) - search_area_size) // (search_area_size - overlap) + 1
-    return field_shape
+    field_shape = (torch.tensor(image_size) - search_area_size) // (search_area_size - overlap) + 1
+    return tuple(field_shape.tolist())
 
 
 def get_x_y(image_size, search_area_size, overlap):
     shape = get_field_shape(image_size, search_area_size, overlap)
-    x_single = np.arange(shape[1], dtype=int) * (search_area_size - overlap) + search_area_size // 2
-    y_single = np.arange(shape[0], dtype=int) * (search_area_size - overlap) + search_area_size // 2
-    x = np.tile(x_single, shape[0])
-    y = np.tile(y_single.reshape((shape[0], 1)), shape[1]).flatten()
-    return x, y
+    x_single = torch.arange(0, shape[1]) * (search_area_size - overlap) + search_area_size // 2
+    y_single = torch.arange(0, shape[0]) * (search_area_size - overlap) + search_area_size // 2
+    x = torch.tile(x_single, (shape[0],))
+    y = torch.tile(y_single.reshape((shape[0], 1)), (shape[1],)).flatten()
+    return x.to(torch.uint32), y.to(torch.uint32)

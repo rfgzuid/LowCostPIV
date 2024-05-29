@@ -43,26 +43,31 @@ class SIV:
         self.multipass, self.multipass_scale = multipass, multipass_scale
         self.dt = dt
 
+        self.img_shape = self.dataset[0][0].shape
+
     def run(self, mode: int):
+        n_rows, n_cols = get_field_shape(self.img_shape, self.window_size, self.overlap)
+
+        x, y = get_x_y(self.img_shape, self.window_size, self.overlap)
+        x, y = x.reshape(n_rows, n_cols), y.reshape(n_rows, n_cols)
+        x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
+
+        u, v = (torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device),
+                torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device))
+
         for idx, data in enumerate(self.dataset):
             img_a, img_b = data
             img_a, img_b = img_a.to(self.device), img_b.to(self.device)
-
-            n_rows, n_cols = get_field_shape(img_a.shape, self.window_size, self.overlap)
-            u, v = torch.zeros((n_rows, n_cols)), torch.zeros((n_rows, n_cols))
 
             for k in range(self.multipass):
                 scale = self.multipass_scale ** (k - self.multipass + 1)
                 window_size, overlap = int(self.window_size * scale), int(self.overlap * scale)
 
                 new_size = (round(img_a.shape[1] * scale), round(img_a.shape[0] * scale))
-                resize = Resize(new_size, InterpolationMode.BILINEAR)
+                resize = Resize(new_size, InterpolationMode.BICUBIC)
                 a, b = resize(img_a[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
 
-                offset = torch.stack((u, v))
-
-                x, y = get_x_y(a.shape, window_size, overlap)
-                x, y = x.reshape(n_rows, n_cols), y.reshape(n_rows, n_cols)
+                offset = torch.stack((u[idx], v[idx]))
 
                 window = window_array(a, window_size, overlap)
                 area = search_array(b, window_size, overlap, area=self.search_area, offsets=offset)
@@ -70,11 +75,12 @@ class SIV:
                 match = block_match(window, area, mode)
                 du, dv = correlation_to_displacement(match, n_rows, n_cols, mode)
 
+                u[idx], v[idx] = u[idx] + du, v[idx] + dv
                 if k != self.multipass - 1:
-                    u, v = (u + du)*self.multipass_scale, (v + dv)*self.multipass_scale  # upscale for next pass
-                else:
-                    u, v = u + du, v + dv
-        return x, y, u, -v
+                    # upscale for next pass
+                    u[idx] *= self.multipass_scale
+                    v[idx] *= self.multipass_scale
+        return x, y, u.cpu(), -v.cpu()
 
 
 class OpticalFlow:
@@ -95,34 +101,41 @@ class OpticalFlow:
         self.alpha, self.num_iter, self.eps = alpha, num_iter, eps
         self.dt = dt
 
+        self.img_shape = self.dataset[0][0].shape
+
     def run(self):
+        rows, cols = self.img_shape[-2:]
+        x, y = torch.meshgrid(torch.arange(0, cols, 1), torch.arange(0, rows, 1), indexing='ij')
+        x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
+
+        xx, yy = torch.meshgrid(torch.linspace(-1, 1, cols), torch.linspace(-1, 1, rows))
+        xx, yy = xx.to(self.device), yy.to(self.device)
+
+        u, v = (torch.zeros((len(self.dataset), rows, cols), device=self.device),
+                torch.zeros((len(self.dataset), rows, cols), device=self.device))
         for idx, data in enumerate(self.dataset):
-            if idx == 0:
-                img_a, img_b = data
-                rows, cols = img_a.shape[-2:]
+            img_a, img_b = data
+            img_a, img_b = img_a.to(self.device), img_b.to(self.device)
 
-                u, v = torch.zeros_like(img_a), torch.zeros_like(img_b)
-                x, y = torch.meshgrid(torch.arange(0, cols, 1), torch.arange(0, rows, 1), indexing='ij')
+            for k in range(self.multipass):
+                scale = self.multipass_scale ** (k - self.multipass + 1)
+                new_size = (round(img_a.shape[1] * scale), round(img_a.shape[0] * scale))
 
-                for k in range(self.multipass):
-                    scale = self.multipass_scale ** (k - self.multipass + 1)
-                    new_size = (round(img_a.shape[1] * scale), round(img_a.shape[0] * scale))
+                # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
+                # https://discuss.pytorch.org/t/solved-torch-grid-sample/51662/2
+                grid = torch.stack((yy, xx), dim=2).unsqueeze(0)
+                v_grid = grid + torch.stack((-u[idx]/(cols/2), -v[idx]/(rows/2)), dim=2)
+                src = img_a[None, None, :, :].float()
+                img_a_new = grid_sample(src, v_grid, mode='bilinear',
+                                        align_corners=False).squeeze().to(torch.uint8)
 
-                    # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
-                    # https://discuss.pytorch.org/t/solved-torch-grid-sample/51662/2
-                    xx, yy = torch.meshgrid(torch.linspace(-1, 1, cols), torch.linspace(-1, 1, rows))
-                    grid = torch.stack((yy, xx), dim=2).unsqueeze(0)
-                    v_grid = grid + torch.stack((-u/(cols/2), -v/(rows/2)), dim=2)
-                    src = img_a[None, None, :, :].float()
-                    img_a_new = grid_sample(src, v_grid, mode='bilinear', align_corners=False).squeeze().to(torch.uint8)
+                resize = Resize(new_size, InterpolationMode.BICUBIC)
+                a, b = resize(img_a_new[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
 
-                    resize = Resize(new_size, InterpolationMode.BILINEAR)
-                    a, b = resize(img_a_new[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
+                du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
 
-                    du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
+                du = interpolate(du[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
+                dv = interpolate(dv[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
 
-                    du = interpolate(du[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
-                    dv = interpolate(dv[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
-
-                    u, v = u + du/scale, v + dv/scale
-        return x, y, u, -v
+                u[idx], v[idx] = u[idx] + du/scale, v[idx] + dv/scale
+        return x, y, u.cpu(), -v.cpu()
