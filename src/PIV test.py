@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# device = "cuda" if torch.cuda.is_available() else "cpu"
 device = "cpu"
 
 dataset = PIVDataset("../Test Data/plume simulation_PROCESSED", ".jpg",
@@ -24,9 +24,8 @@ window_amount = aa.shape[0]
 print(window_amount, 'windows')
 bb = moving_reference_array(img_b, window_size, overlap, left=10, right=10, top=10, bottom=10)
 
-# idx = 566
-window, area = aa[:10], bb[:10]
-idx = 5
+idx = 566
+window, area = aa, bb
 
 cv2.imshow('Interrogation window', window[idx].cpu().numpy())
 cv2.waitKey(0)

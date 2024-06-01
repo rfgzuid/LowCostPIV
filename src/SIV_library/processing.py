@@ -57,6 +57,7 @@ class Video:
             return
 
         cap = cv2.VideoCapture(f"{self.root}/{self.fn}")
+        prev_frame = None
 
         idx = 0
         while cap.isOpened():
@@ -67,13 +68,16 @@ class Video:
                 break
 
             # if no indices are specified, all frames are processed
-            if self.indices is not None:
-                if idx in self.indices:
+            if not self.indices or idx in self.indices:
+                if idx > 0:
+                    # SAD score to check for duplicates (Iphone slo-mo contains duplicates)
+                    sad = np.sum(np.abs((frame.astype(np.float32) - prev_frame.astype(np.float32))))
+                    if sad > 10_000_000.:  # arbitrary cutoff that we found
+                        cv2.imwrite(f"{self.root}/{folder_name}/{idx}{self.df}", frame)
+                else:
                     cv2.imwrite(f"{self.root}/{folder_name}/{idx}{self.df}", frame)
 
-            else:
-                cv2.imwrite(f"{self.root}/{folder_name}/{idx}{self.df}", frame)
-
+            prev_frame = frame
             idx += 1
         cap.release()
 
@@ -112,7 +116,8 @@ class Processor:
 
     @staticmethod
     def denoise(image: np.ndarray) -> np.ndarray:
-        clean_img = cv2.fastNlMeansDenoising(image, None, h=3, templateWindowSize=7, searchWindowSize=21)
+        # clean_img = cv2.fastNlMeansDenoising(image, None, h=3, templateWindowSize=7, searchWindowSize=21)
+        clean_img = cv2.medianBlur(image, 3)
         return clean_img
 
     # isolate smoke by subtracting reference image (see Jonas paper)
@@ -143,16 +148,16 @@ class Processor:
             if self.denoise_enabled:
                 new_frame = self.denoise(new_frame)
 
-            # set first frame as reference
+            # set first frame as reference - don't save this one for SIV
             if self.reference is None:
                 self.reference = new_frame
+            else:
+                new_frame = self.mask(new_frame)
 
-            new_frame = self.mask(new_frame)
+                if self.rescale_factor is not None:
+                    new_frame = self.rescale(new_frame, self.rescale_factor)
 
-            if self.rescale_factor is not None:
-                new_frame = self.rescale(new_frame, self.rescale_factor)
-
-            cv2.imwrite(f"{self.root}/{self.dir}_PROCESSED/{idx}{self.df}", new_frame)
+                cv2.imwrite(f"{self.root}/{self.dir}_PROCESSED/{idx}{self.df}", new_frame)
 
 
 class Viewer:
@@ -197,7 +202,7 @@ class Viewer:
         x0, y0, vx0, vy0 = results[0]
         new_x0, new_y0 = x0/scale, y0/scale
         vx0, vy0 = np.flip(vx0, axis=0), np.flip(vy0, axis=0)  # flip velocities for correct IMAGE coords
-        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, max_abs-min_abs, scale=.2, cmap='jet')
+        vectors = ax.quiver(new_x0, new_y0, vx0, vy0, max_abs-min_abs, scale=.5, cmap='jet')
 
         def update(idx):
             frame = self.read_frame(self.files[idx])
@@ -213,9 +218,7 @@ class Viewer:
 
         ani = animation.FuncAnimation(fig=fig, func=update, frames=len(self.files)-1, interval=1000/self.playback_fps)
 
-        # writer = animation.PillowWriter(fps=15,
-        #                                 metadata=dict(artist='Me'),
-        #                                 bitrate=1800)
+        # writer = animation.PillowWriter(fps=15)
         # ani.save('Test Data/plume.gif', writer=writer)
 
         plt.show()
@@ -259,9 +262,7 @@ class Viewer:
 
         ani = animation.FuncAnimation(fig=fig, func=update, frames=len(self.files)-1, interval=1000/self.playback_fps)
 
-        # writer = animation.PillowWriter(fps=15,
-        #                                 metadata=dict(artist='Me'),
-        #                                 bitrate=1800)
+        # writer = animation.PillowWriter(fps=15)
         # ani.save('Test Data/plume.gif', writer=writer)
 
         plt.show()

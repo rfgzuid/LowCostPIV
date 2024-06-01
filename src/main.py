@@ -1,4 +1,4 @@
-from SIV_library.processing import Video, Processor, Viewer
+from src.SIV_library.processing import Video, Processor, Viewer
 from torchPIV.PIVbackend import OfflinePIV, free_cuda_memory
 
 import numpy as np
@@ -8,17 +8,17 @@ import os
 
 
 if __name__ == "__main__":
-    video_file = "SmokeVideo.MOV"
+    video_file = "plume simulation.mp4"
     fn = video_file.split(".")[0]
 
     # reference frame specified first, then the range we want to analyse with SIV
-    # frames = [0, *(i for i in range(300, 400))]
+    frames = [0, *(i for i in range(225, 351))]
 
-    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=None)
+    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=frames)
     # vid.show_frame(500)
     vid.create_frames()
 
-    processor = Processor(rf"Test Data/{fn}", df='.jpg', denoise=False, rescale=None, crop=False)
+    processor = Processor(rf"Test Data/{fn}", df='.jpg', denoise=True, rescale=None, crop=False)
     processor.postprocess()
 
     device = torch.cuda.get_device_name() if torch.cuda.is_available() else "cpu"
@@ -41,6 +41,7 @@ if __name__ == "__main__":
         folder_mode="sequential"  # Pairs or sequential frames
     )
 
+
     if f"{fn}_RESULTS.npy" not in os.listdir(f"Test Data"):
         results = []
         for out in t():
@@ -59,5 +60,8 @@ if __name__ == "__main__":
     viewer = Viewer(rf"Test Data/{fn}_PROCESSED", playback_fps=30., capture_fps=capture_fps)
 
     # viewer.play_video()
+    print(res[0])
+    print(res.shape)
+    print(res[0].shape)
     viewer.vector_field(res, scale)
     # viewer.velocity_field(res, scale, 30, 'cubic')
