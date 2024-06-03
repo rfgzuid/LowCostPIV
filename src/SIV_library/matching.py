@@ -1,9 +1,5 @@
 from torch.nn.functional import conv2d, pad
 import torch
-import numpy as np
-
-from tqdm import tqdm
-import cv2
 
 
 def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
@@ -13,12 +9,12 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     res = torch.zeros((count, area_rows - window_rows + 1, area_cols - window_cols + 1), device=windows.device)
 
     if mode == 0:  # correlation mode
-        for idx, (window, area) in tqdm(enumerate(zip(windows, areas)), total=count, desc='Correlation'):
+        for idx, (window, area) in enumerate(zip(windows, areas)):
             corr = conv2d(area.unsqueeze(0).unsqueeze(0), window.unsqueeze(0).unsqueeze(0), stride=1)
             res[idx] = corr
 
     elif mode == 1:  # SAD mode
-        for j in tqdm(range(area_rows - window_rows + 1), desc='SAD'):
+        for j in range(area_rows - window_rows + 1):
             for i in range(area_cols - window_cols + 1):
                 ref = areas[:, j:j + window_rows, i:i + window_cols]
                 res[:, j, i] = torch.sum(torch.abs(windows - ref), dim=(1, 2))
@@ -30,40 +26,26 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     return res / (window_rows * window_cols)
 
 
-def window_array(array: torch.Tensor, window_size, overlap) -> torch.Tensor:
-    shape = array.shape
-    strides = (shape[-1] * (window_size - overlap), (window_size - overlap), shape[-1], 1)
-
-    shape = (int((shape[-2] - window_size) / (window_size - overlap)) + 1,
-             int((shape[-1] - window_size) / (window_size - overlap)) + 1,
-             window_size, window_size)
-
-    return (torch.as_strided(array, size=shape, stride=strides)
-            .reshape(-1, window_size, window_size))
-
-
-def search_array(array: torch.Tensor, window_size, overlap,
-                 area: tuple[int, int, int, int] | None = None,
-                 offsets: torch.Tensor | None = None) -> torch.Tensor:
-    iters = get_field_shape(array.shape, window_size, overlap)
-
-    dx, dy = torch.round(offsets[0]).int(), torch.round(offsets[1]).int()
-    dx_max, dy_max = torch.max(torch.abs(dx)).item(), torch.max(torch.abs(dy)).item()
+def window_array(array: torch.Tensor, window_size, overlap,
+                 area: tuple[int, int, int, int] | None = None) -> torch.Tensor:
+    if area is None:
+        area = (0, 0, 0, 0)
 
     left, right, top, bottom = area
-    padding = (left + dx_max, right + dx_max, top + dy_max, bottom + dy_max)
-    array = pad(array, padding)
+    padded = pad(array, area)
+    shape = padded.shape
 
-    areas = torch.zeros((iters[0]*iters[1], window_size+top+bottom, window_size+left+right),
-                        dtype=torch.uint8, device=array.device)
+    strides = (shape[-1] * (window_size - overlap), (window_size - overlap), shape[-1], 1)
 
-    for j in range(iters[0]):
-        for i in range(iters[1]):
-            offset_x, offset_y = int(offsets[0, j, i]), int(offsets[1, j, i])
-            area = array[j*overlap+offset_y+dy_max:j*overlap+window_size+top+bottom+offset_y+dy_max,
-                         i*overlap+offset_x+dx_max:i*overlap+window_size+left+right+offset_x+dx_max]
-            areas[i+j*iters[1], :, :] = area
-    return areas
+    shape = (
+        int((shape[-2] - window_size - top - bottom) / (window_size - overlap)) + 1,
+        int((shape[-1] - window_size - left - right) / (window_size - overlap)) + 1,
+        window_size + top + bottom,
+        window_size + left + right,
+    )
+
+    return (torch.as_strided(padded, size=shape, stride=strides)
+            .reshape(-1, window_size + top + bottom, window_size + left + right))
 
 
 def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 0):
@@ -177,8 +159,11 @@ def get_field_shape(image_size, search_area_size, overlap):
 
 def get_x_y(image_size, search_area_size, overlap):
     shape = get_field_shape(image_size, search_area_size, overlap)
+
     x_single = torch.arange(0, shape[1]) * (search_area_size - overlap) + search_area_size // 2
     y_single = torch.arange(0, shape[0]) * (search_area_size - overlap) + search_area_size // 2
+
     x = torch.tile(x_single, (shape[0],))
     y = torch.tile(y_single.reshape((shape[0], 1)), (shape[1],)).flatten()
+
     return x.to(torch.uint32), y.to(torch.uint32)

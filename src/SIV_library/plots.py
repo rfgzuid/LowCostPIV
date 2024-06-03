@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
+from IPython.display import HTML
 
 
 def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
@@ -38,10 +39,14 @@ def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
         ax.set_title(f"t = {idx/240:.3f} s")
         return image, vectors
 
-    ani = animation.FuncAnimation(fig=fig, func=update, frames=u.shape[0], interval=100)
+    ani = animation.FuncAnimation(fig=fig, func=update, frames=u.shape[0], interval=1000/30)
 
     if fn is not None:
         writer = animation.PillowWriter(fps=5)
         ani.save(f'../Test Data/{fn}', writer=writer)
 
-    plt.show()
+    HTML(ani.to_jshtml())
+
+    return ani
+    #
+    # plt.show()
