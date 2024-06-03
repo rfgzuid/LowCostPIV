@@ -1,8 +1,6 @@
 from .matching import window_array, get_field_shape, block_match, get_x_y, correlation_to_displacement
 from .optical_flow import optical_flow
 
-from torch.nn.functional import grid_sample, interpolate
-from torchvision.transforms import Resize, InterpolationMode
 import torch
 
 from torch.utils.data import Dataset
@@ -13,12 +11,12 @@ from tqdm import tqdm
 
 
 class SIVDataset(Dataset):
-    def __init__(self, folder: str, transform: None) -> None:
+    def __init__(self, folder: str, transforms: list | None = None) -> None:
         # assume the files are sorted and all have the correct file type
         filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
         self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
 
-        self.transform = transform
+        self.transforms = transforms
 
     def __len__(self) -> int:
         return len(self.img_pairs)
@@ -27,9 +25,14 @@ class SIVDataset(Dataset):
         pair = self.img_pairs[index]
         img_a, img_b = cv2.imread(pair[0], cv2.IMREAD_GRAYSCALE), cv2.imread(pair[1], cv2.IMREAD_GRAYSCALE)
 
-        if self.transform is not None:
-            img_a, img_b = self.transform(img_a), self.transform(img_b)
-        return torch.tensor(img_a, dtype=torch.uint8), torch.tensor(img_b, dtype=torch.uint8)
+        img_a, img_b = torch.tensor(img_a, dtype=torch.uint8), torch.tensor(img_b, dtype=torch.uint8)
+        img_a, img_b = img_a[None, None, :, :], img_b[None, None, :, :]  # batch and channel dimension for transforms
+
+        if self.transforms is not None:
+            for transform in self.transforms:
+                img_a, img_b = transform(img_a), transform(img_b)
+
+        return img_a.squeeze(), img_b.squeeze()
 
 
 class SIV:
@@ -39,16 +42,11 @@ class SIV:
                  window_size: int = 128,
                  overlap: int = 64,
                  search_area: tuple[int, int, int, int] = (0, 0, 0, 0),
-                 multipass: int = 1,
-                 multipass_scale: float = 2.,
-                 dt: float = 1/240
                  ) -> None:
 
         self.dataset = SIVDataset(folder=folder)
         self.device = device
         self.window_size, self.overlap, self.search_area = window_size, overlap, search_area
-        self.multipass, self.multipass_scale = multipass, multipass_scale
-        self.dt = dt
 
         self.img_shape = self.dataset[0][0].shape
 
@@ -64,84 +62,45 @@ class SIV:
 
         for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset)):
             img_a, img_b = data
-            img_a, img_b = img_a.to(self.device), img_b.to(self.device)
+            a, b = img_a.to(self.device), img_b.to(self.device)
 
-            for k in range(self.multipass):
-                scale = self.multipass_scale ** (k - self.multipass + 1)
-                window_size, overlap = int(self.window_size * scale), int(self.overlap * scale)
+            window = window_array(a, self.window_size, self.overlap)
+            area = window_array(b, self.window_size, self.overlap, area=self.search_area)
 
-                new_size = (round(img_a.shape[0] * scale), round(img_a.shape[1] * scale))
-                resize = Resize(new_size, InterpolationMode.BICUBIC)
-                a, b = resize(img_a[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
+            match = block_match(window, area, mode)
+            du, dv = correlation_to_displacement(match, n_rows, n_cols, mode)
 
-                window = window_array(a, window_size, overlap)
-                area = window_array(b, window_size, overlap, area=self.search_area)
-
-                match = block_match(window, area, mode)
-                du, dv = correlation_to_displacement(match, n_rows, n_cols, mode)
-
-                u[idx], v[idx] = u[idx] + du, v[idx] + dv
-                if k != self.multipass - 1:
-                    # upscale for next pass
-                    u[idx] *= self.multipass_scale
-                    v[idx] *= self.multipass_scale
-        return x, y, u.cpu(), -v.cpu()
+            u[idx], v[idx] = du, dv
+        return x, y, u, -v
 
 
 class OpticalFlow:
     def __init__(self,
                  folder: str = None,
                  device: torch.device = "cpu",
-                 multipass: int = 1,
-                 multipass_scale: float = 2.,
                  alpha: float = 1000.,
                  num_iter: int = 100,
                  eps: float = 1e-5,
-                 dt: float = 1/240
                  ) -> None:
 
         self.dataset = SIVDataset(folder=folder)
         self.device = device
-        self.multipass, self.multipass_scale = multipass, multipass_scale
         self.alpha, self.num_iter, self.eps = alpha, num_iter, eps
-        self.dt = dt
 
         self.img_shape = self.dataset[0][0].shape
 
     def run(self):
-        rows, cols = self.img_shape[-2:]
-        x, y = torch.meshgrid(torch.arange(0, cols, 1), torch.arange(0, rows, 1), indexing='ij')
+        rows, cols = self.dataset[0][0].shape[-2:]
+        y, x = torch.meshgrid(torch.arange(0, rows, 1), torch.arange(0, cols, 1))
         x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
-
-        xx, yy = torch.meshgrid(torch.linspace(-1, 1, rows), torch.linspace(-1, 1, cols))
-        xx, yy = xx.to(self.device), yy.to(self.device)
 
         u, v = (torch.zeros((len(self.dataset), rows, cols), device=self.device),
                 torch.zeros((len(self.dataset), rows, cols), device=self.device))
 
         for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset)):
             img_a, img_b = data
-            img_a, img_b = img_a.to(self.device), img_b.to(self.device)
+            a, b = img_a.to(self.device), img_b.to(self.device)
 
-            for k in range(self.multipass):
-                scale = self.multipass_scale ** (k - self.multipass + 1)
-                new_size = (round(img_a.shape[1] * scale), round(img_a.shape[0] * scale))
-
-                # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
-                # https://discuss.pytorch.org/t/solved-torch-grid-sample/51662/2
-                grid = torch.stack((yy, xx), dim=2).unsqueeze(0)
-                v_grid = grid + torch.stack((-u[idx]/(cols/2), -v[idx]/(rows/2)), dim=2)
-                src = img_a[None, None, :, :].float()
-                img_a_new = grid_sample(src, v_grid, mode='bilinear',
-                                        align_corners=False).squeeze().to(torch.uint8)
-
-                resize = Resize(new_size, InterpolationMode.BICUBIC)
-                a, b = resize(img_a_new[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
-
-                du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
-
-                du = interpolate(du[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
-                dv = interpolate(dv[None, None, :, :], img_a.shape, mode='bicubic').squeeze()
-
-                u[idx], v[idx] = u[idx] + du/scale, v[idx] + dv/scale
-        return x, y, u.cpu(), -v.cpu()
+            du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
+            u[idx], v[idx] = du, dv
+        return x, y, u, -v

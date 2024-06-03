@@ -166,4 +166,4 @@ def get_x_y(image_size, search_area_size, overlap):
     x = torch.tile(x_single, (shape[0],))
     y = torch.tile(y_single.reshape((shape[0], 1)), (shape[1],)).flatten()
 
-    return x.to(torch.uint32), y.to(torch.uint32)
+    return x, y
