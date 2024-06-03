@@ -1,6 +1,5 @@
-from .matching import window_array, search_array, get_field_shape, block_match, get_x_y, correlation_to_displacement
+from .matching import window_array, get_field_shape, block_match, get_x_y, correlation_to_displacement
 from .optical_flow import optical_flow
-from .plots import plot_optical_flow
 
 from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
@@ -14,17 +13,22 @@ from tqdm import tqdm
 
 
 class SIVDataset(Dataset):
-    def __init__(self, folder: str):
+    def __init__(self, folder: str, transform: None) -> None:
         # assume the files are sorted and all have the correct file type
         filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
         self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
 
-    def __len__(self):
+        self.transform = transform
+
+    def __len__(self) -> int:
         return len(self.img_pairs)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         pair = self.img_pairs[index]
         img_a, img_b = cv2.imread(pair[0], cv2.IMREAD_GRAYSCALE), cv2.imread(pair[1], cv2.IMREAD_GRAYSCALE)
+
+        if self.transform is not None:
+            img_a, img_b = self.transform(img_a), self.transform(img_b)
         return torch.tensor(img_a, dtype=torch.uint8), torch.tensor(img_b, dtype=torch.uint8)
 
 
@@ -70,10 +74,8 @@ class SIV:
                 resize = Resize(new_size, InterpolationMode.BICUBIC)
                 a, b = resize(img_a[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
 
-                offset = torch.stack((u[idx], v[idx]))
-
                 window = window_array(a, window_size, overlap)
-                area = search_array(b, window_size, overlap, area=self.search_area, offsets=offset)
+                area = window_array(b, window_size, overlap, area=self.search_area)
 
                 match = block_match(window, area, mode)
                 du, dv = correlation_to_displacement(match, n_rows, n_cols, mode)
