@@ -283,7 +283,7 @@ class WarperApp(tk.Tk):
             cap = cv2.VideoCapture(self.video_path)
 
             # Directory to save the frames
-            output_dir = 'C:/Users/jortd/PycharmProjects/kloten/.venv/trampezium/Test Data/4302_warped'
+            output_dir = ''
 
             frame_count = 0
             while cap.isOpened():
