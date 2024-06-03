@@ -1,5 +1,6 @@
 from .matching import window_array, search_array, get_field_shape, block_match, get_x_y, correlation_to_displacement
 from .optical_flow import optical_flow
+from .plots import plot_optical_flow
 
 from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
@@ -8,6 +9,8 @@ import torch
 from torch.utils.data import Dataset
 import os
 import cv2
+
+from tqdm import tqdm
 
 
 class SIVDataset(Dataset):
@@ -55,7 +58,7 @@ class SIV:
         u, v = (torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device),
                 torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device))
 
-        for idx, data in enumerate(self.dataset):
+        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset)):
             img_a, img_b = data
             img_a, img_b = img_a.to(self.device), img_b.to(self.device)
 
@@ -63,7 +66,7 @@ class SIV:
                 scale = self.multipass_scale ** (k - self.multipass + 1)
                 window_size, overlap = int(self.window_size * scale), int(self.overlap * scale)
 
-                new_size = (round(img_a.shape[1] * scale), round(img_a.shape[0] * scale))
+                new_size = (round(img_a.shape[0] * scale), round(img_a.shape[1] * scale))
                 resize = Resize(new_size, InterpolationMode.BICUBIC)
                 a, b = resize(img_a[None, :, :]).squeeze(), resize(img_b[None, :, :]).squeeze()
 
@@ -108,12 +111,13 @@ class OpticalFlow:
         x, y = torch.meshgrid(torch.arange(0, cols, 1), torch.arange(0, rows, 1), indexing='ij')
         x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
 
-        xx, yy = torch.meshgrid(torch.linspace(-1, 1, cols), torch.linspace(-1, 1, rows))
+        xx, yy = torch.meshgrid(torch.linspace(-1, 1, rows), torch.linspace(-1, 1, cols))
         xx, yy = xx.to(self.device), yy.to(self.device)
 
         u, v = (torch.zeros((len(self.dataset), rows, cols), device=self.device),
                 torch.zeros((len(self.dataset), rows, cols), device=self.device))
-        for idx, data in enumerate(self.dataset):
+
+        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset)):
             img_a, img_b = data
             img_a, img_b = img_a.to(self.device), img_b.to(self.device)
 

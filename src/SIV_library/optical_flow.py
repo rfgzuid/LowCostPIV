@@ -24,7 +24,7 @@ def optical_flow(img1, img2, alpha, num_iter, eps):
                                  [1/6, 0, 1/6],
                                  [1/12, 1/6, 1/12]]]], dtype=torch.float32, device=device)
 
-    for i in tqdm(range(num_iter)):
+    for i in range(num_iter):
         u_avg = conv2d(u, avg_kernel, padding=1)
         v_avg = conv2d(v, avg_kernel, padding=1)
 
@@ -38,7 +38,7 @@ def optical_flow(img1, img2, alpha, num_iter, eps):
         delta /= a.shape[-2] * a.shape[-1]
 
         if eps is not None and delta < eps:
-            print('Early stopping', i)
+            # print('Early stopping', i)
             break
 
         u, v = u_new, v_new

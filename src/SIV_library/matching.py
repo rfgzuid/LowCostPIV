@@ -1,9 +1,5 @@
 from torch.nn.functional import conv2d, pad
 import torch
-import numpy as np
-
-from tqdm import tqdm
-import cv2
 
 
 def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
@@ -13,12 +9,12 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     res = torch.zeros((count, area_rows - window_rows + 1, area_cols - window_cols + 1), device=windows.device)
 
     if mode == 0:  # correlation mode
-        for idx, (window, area) in tqdm(enumerate(zip(windows, areas)), total=count, desc='Correlation'):
+        for idx, (window, area) in enumerate(zip(windows, areas)):
             corr = conv2d(area.unsqueeze(0).unsqueeze(0), window.unsqueeze(0).unsqueeze(0), stride=1)
             res[idx] = corr
 
     elif mode == 1:  # SAD mode
-        for j in tqdm(range(area_rows - window_rows + 1), desc='SAD'):
+        for j in range(area_rows - window_rows + 1):
             for i in range(area_cols - window_cols + 1):
                 ref = areas[:, j:j + window_rows, i:i + window_cols]
                 res[:, j, i] = torch.sum(torch.abs(windows - ref), dim=(1, 2))
