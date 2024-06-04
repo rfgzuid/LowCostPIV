@@ -67,15 +67,11 @@ class Video:
             if not ret:
                 break
 
-            # if no indices are specified, all frames are processed
-            if not self.indices or idx in self.indices:
-                if idx > 0:
-                    # SAD score to check for duplicates (Iphone slo-mo contains duplicates)
-                    sad = np.sum(np.abs((frame.astype(np.float32) - prev_frame.astype(np.float32))))
-                    if sad > 10_000_000.:  # arbitrary cutoff that we found
-                        cv2.imwrite(f"{self.root}/{folder_name}/{idx}{self.df}", frame)
-                else:
-                    cv2.imwrite(f"{self.root}/{folder_name}/{idx}{self.df}", frame)
+            if idx in self.indices:
+                cv2.imwrite(f"{self.root}/{folder_name}/{idx}{self.df}", frame)
+
+            elif not self.indices or idx in self.indices:
+                cv2.imwrite(f"{self.root}/{folder_name}/{idx}{self.df}", frame)
 
             prev_frame = frame
             idx += 1
