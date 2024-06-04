@@ -1,10 +1,13 @@
 import os
+import cv2
+import numpy as np
+
 
 def crop_and_isolate_green_pixels(input_dir, output_dir, crop_width, crop_height):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    files = [f for f in os.listdir(input_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif'))]
+    files = [f for f in os.listdir(input_dir)]
 
     for filename in files:
         img_path = os.path.join(input_dir, filename)
