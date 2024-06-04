@@ -35,8 +35,8 @@ class ImageProcessor:
         self.output_dir = ""
         self.files = []
         self.current_img = None
-        self.crop_width = 400
-        self.crop_height = 400
+        self.crop_width = 800
+        self.crop_height = 800
 
     def select_input_directory(self):
         self.input_dir = filedialog.askdirectory(title="Select Input Directory")
@@ -65,6 +65,10 @@ class ImageProcessor:
     def show_image(self, img):
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_pil = Image.fromarray(img_rgb)
+
+        # Resize the image for preview
+        img_pil.thumbnail((400, 400))  # Resize to fit in a 400x400 box while maintaining aspect ratio
+
         img_tk = ImageTk.PhotoImage(img_pil)
         self.img_label.img_tk = img_tk
         self.img_label.config(image=img_tk)
