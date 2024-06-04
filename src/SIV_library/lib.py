@@ -16,6 +16,7 @@ class SIVDataset(Dataset):
         filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
         self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
 
+        self.img_shape = cv2.imread(filenames[0]).shape
         self.transforms = transforms
 
     def __len__(self) -> int:
@@ -30,8 +31,8 @@ class SIVDataset(Dataset):
 
         if self.transforms is not None:
             for transform in self.transforms:
-                img_a, img_b = transform(img_a), transform(img_b)
-
+                img_a = transform(img_a) if 'a' in transform.apply_to else img_a
+                img_b = transform(img_b) if 'b' in transform.apply_to else img_b
         return img_a.squeeze(), img_b.squeeze()
 
 
@@ -60,7 +61,7 @@ class SIV:
         u, v = (torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device),
                 torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device))
 
-        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset)):
+        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset), desc="Matching"):
             img_a, img_b = data
             a, b = img_a.to(self.device), img_b.to(self.device)
 
@@ -83,23 +84,25 @@ class OpticalFlow:
                  eps: float = 1e-5,
                  ) -> None:
 
+        self.folder = folder
         self.dataset = SIVDataset(folder=folder)
         self.device = device
         self.alpha, self.num_iter, self.eps = alpha, num_iter, eps
 
-        self.img_shape = self.dataset[0][0].shape
-
     def run(self):
-        rows, cols = self.dataset[0][0].shape[-2:]
-        y, x = torch.meshgrid(torch.arange(0, rows, 1), torch.arange(0, cols, 1))
-        x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
-
-        u, v = (torch.zeros((len(self.dataset), rows, cols), device=self.device),
-                torch.zeros((len(self.dataset), rows, cols), device=self.device))
-
-        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset)):
+        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset), desc='Optical flow'):
             img_a, img_b = data
             a, b = img_a.to(self.device), img_b.to(self.device)
+
+            # initialize result tensors in the first loop
+            if idx == 0:
+                rows, cols = a.shape[-2:]
+
+                y, x = torch.meshgrid(torch.arange(0, rows, 1), torch.arange(0, cols, 1))
+                x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
+
+                u, v = (torch.zeros((len(self.dataset), rows, cols), device=self.device),
+                        torch.zeros((len(self.dataset), rows, cols), device=self.device))
 
             du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
             u[idx], v[idx] = du, dv

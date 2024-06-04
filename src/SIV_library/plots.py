@@ -23,7 +23,7 @@ def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
     vx0, vy0 = u0[yy, xx], v0[yy, xx]
     vectors = ax.quiver(x, y, vx0, -vy0, color='red', scale=1, scale_units='xy', angles='xy')
 
-    image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='turbo')
+    image = ax.imshow(abs_velocities[0], vmin=min_abs, vmax=max_abs, cmap='magma')
 
     ax.set_axis_off()
     ax.set_title("Optical Flow")
@@ -42,7 +42,7 @@ def plot_optical_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
     ani = animation.FuncAnimation(fig=fig, func=update, frames=u.shape[0], interval=1000/30)
 
     if fn is not None:
-        writer = animation.PillowWriter(fps=5)
+        writer = animation.PillowWriter(fps=10)
         ani.save(f'../Test Data/{fn}', writer=writer)
 
     HTML(ani.to_jshtml())

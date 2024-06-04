@@ -2,7 +2,7 @@ import torch
 
 from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
-from src.SIV_library.lib import OpticalFlow, SIVDataset
+from src.SIV_library.lib import OpticalFlow
 
 
 class Warp(torch.nn.Module):
@@ -11,7 +11,10 @@ class Warp(torch.nn.Module):
 
     def __init__(self, x, y, u, v):
         super().__init__()
-        self.x, self.y, self.u, self.v = x, y, u, v
+        self.x, self.y, self.u, self.v = x, y, u.cpu(), v.cpu()
+        self.idx = 0
+
+        self.apply_to = ['a']  # apply this transform to ONLY the first image of the pair
 
     def forward(self, image):
         rows, cols = image.shape[-2:]
@@ -19,29 +22,45 @@ class Warp(torch.nn.Module):
 
         # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
         # https://discuss.pytorch.org/t/solved-torch-grid-sample/51662/2
-        grid = torch.stack((x, y), dim=2).unsqueeze(0)
-        v_grid = grid + torch.stack((-self.u / (cols / 2), self.v / (rows / 2)), dim=2)
+        grid = torch.stack((x[self.idx], y[self.idx]), dim=-1)
+        v_grid = grid + torch.stack((-self.u[self.idx] / (cols / 2), self.v[self.idx] / (rows / 2)), dim=-1)
 
-        img_new = grid_sample(image.float(), v_grid, mode='bicubic').to(torch.uint8)
+        img_new = grid_sample(image.float(), v_grid[None, :, :, :], mode='bicubic').to(torch.uint8)
+        self.idx += 1
         return img_new
 
 
-def coarse_to_fine_optical(inp: OpticalFlow, num_passes: int = 3, scale_factor: float = 1/2):
+def coarse_to_fine(optical: OpticalFlow, num_passes: int = 3, scale_factor: float = 1/2):
     """
     runs the optical flow algorithm in a coarse-to-fine pyramidal structure, allowing for larger displacements
     https://www.ipol.im/pub/art/2013/20/article.pdf
     """
-    img_shape = inp.img_shape
+    img_shape = optical.dataset.img_shape
+    scales = [scale_factor ** (num_passes - p - 1) for p in range(num_passes)]
+    sizes = [(round(img_shape[0] * scale), round(img_shape[1] * scale)) for scale in scales]
 
-    for p in range(num_passes):
-        scale = scale_factor ** (num_passes - p - 1)
-        new_size = (round(img_shape[0] * scale), round(img_shape[1] * scale))
+    u = torch.zeros((len(optical.dataset), *sizes[0]), device=optical.device)
+    v = torch.zeros((len(optical.dataset), *sizes[0]), device=optical.device)
 
-        resize = Resize(new_size, InterpolationMode.BICUBIC)
-        warp = Warp(...)
-        inp.dataset.transforms = [resize, warp]
+    for idx, size in enumerate(sizes):
+        y, x = torch.meshgrid(torch.arange(0, size[0], 1), torch.arange(0, size[1], 1))
+        x, y = x.expand(len(optical.dataset), -1, -1), y.expand(len(optical.dataset), -1, -1)
 
-        x, y, u, v = inp.run()
+        resize = Resize(size, InterpolationMode.BICUBIC)
+        resize.apply_to = ['a', 'b']  # apply the resize transform to both images in the pair
+        warp = Warp(x, y, u, v)
+
+        optical.dataset.transforms = [resize, warp]
+
+        _, _, du, dv = optical.run()
+        u, v = u + du, v + dv
+
+        if idx < num_passes - 1:
+            u = interpolate(u[None, :, :, :], sizes[idx + 1], mode='bicubic').squeeze()
+            v = interpolate(v[None, :, :, :], sizes[idx + 1], mode='bicubic').squeeze()
+
+            u, v = u / scale_factor, v / scale_factor
+    return x, y, u, -v
 
 
 def match_refine():
