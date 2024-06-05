@@ -52,18 +52,22 @@ class SIV:
         self.img_shape = self.dataset[0][0].shape
 
     def run(self, mode: int):
-        n_rows, n_cols = get_field_shape(self.img_shape, self.window_size, self.overlap)
-
-        x, y = get_x_y(self.img_shape, self.window_size, self.overlap)
-        x, y = x.reshape(n_rows, n_cols), y.reshape(n_rows, n_cols)
-        x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
-
-        u, v = (torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device),
-                torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device))
-
-        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset), desc="Matching"):
+        for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset),
+                              desc="SAD" if mode == 1 else "Correlation"):
             img_a, img_b = data
             a, b = img_a.to(self.device), img_b.to(self.device)
+
+            # initialize result tensors in the first loop
+            if idx == 0:
+                img_shape = a.shape[-2:]
+                n_rows, n_cols = get_field_shape(img_shape, self.window_size, self.overlap)
+
+                x, y = get_x_y(self.img_shape, self.window_size, self.overlap)
+                x, y = x.reshape(n_rows, n_cols), y.reshape(n_rows, n_cols)
+                x, y = x.expand(len(self.dataset), -1, -1), y.expand(len(self.dataset), -1, -1)
+
+                u, v = (torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device),
+                        torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device))
 
             window = window_array(a, self.window_size, self.overlap)
             area = window_array(b, self.window_size, self.overlap, area=self.search_area)

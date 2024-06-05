@@ -24,29 +24,6 @@ class Video:
 
         self.indices = indices
 
-    def show_frame(self, frame_number: int) -> None:
-        cap = cv2.VideoCapture(f"{self.root}/{self.fn}")
-        image = None
-
-        idx = 0
-        while cap.isOpened():
-            ret, frame = cap.read()
-
-            # if all frames have been loaded, break out of loop
-            if not ret:
-                break
-
-            if idx == frame_number:
-                image = frame
-                break
-
-            idx += 1
-        cap.release()
-
-        cv2.imshow(f"Frame {frame_number}", image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
     def create_frames(self) -> None:
         folder_name = self.fn.split(".")[0]
 
@@ -84,36 +61,18 @@ class Processor:
         - Specify the folder containing video frames
     """
 
-    def __init__(self, path: str, df: str,
-                 denoise: bool = False, rescale: float | None = None, crop: bool = False) -> None:
+    def __init__(self, path: str, df: str) -> None:
         dirs = path.split('/')
         self.root = '/'.join(dirs[:-1])
 
         self.dir = dirs[-1]
         self.df = df  # data format for frame images
-
-        self.denoise_enabled = denoise
-        self.crop_enabled = crop
-        self.rescale_factor = rescale
-
         self.reference = None  # for smoke masking
 
     @staticmethod
-    def rescale(image: np.ndarray, factor: float) -> np.ndarray:
-        height, width = image.shape[:2]
-        scaled_img = cv2.resize(image, (round(width * factor), round(height * factor)), cv2.INTER_AREA)
-        return scaled_img
-
-    # remove black border from image
-    @staticmethod
-    def crop_border(image: np.ndarray) -> np.ndarray:
-        y_nonzero, x_nonzero = np.nonzero(image)
-        return image[np.min(y_nonzero):np.max(y_nonzero), np.min(x_nonzero):np.max(x_nonzero)]
-
-    @staticmethod
     def denoise(image: np.ndarray) -> np.ndarray:
-        # clean_img = cv2.fastNlMeansDenoising(image, None, h=3, templateWindowSize=7, searchWindowSize=21)
-        clean_img = cv2.medianBlur(image, 3)
+        clean_img = cv2.fastNlMeansDenoising(image, None, h=3, templateWindowSize=7, searchWindowSize=21)
+        # clean_img = cv2.medianBlur(image, 3)
         return clean_img
 
     # isolate smoke by subtracting reference image (see Jonas paper)
@@ -134,25 +93,13 @@ class Processor:
             idx = file.split('.')[0]
 
             frame = cv2.imread(f"{self.root}/{self.dir}/{file}", cv2.IMREAD_GRAYSCALE)
-            # frame = cv2.imread(f"{self.root}/{self.dir}/{file}", cv2.IMREAD_UNCHANGED)
-
-            if self.crop_enabled:
-                new_frame = self.crop_border(frame)
-            else:
-                new_frame = frame
-
-            if self.denoise_enabled:
-                new_frame = self.denoise(new_frame)
+            new_frame = self.denoise(frame)
 
             # set first frame as reference - don't save this one for SIV
             if self.reference is None:
                 self.reference = new_frame
             else:
                 new_frame = self.mask(new_frame)
-
-                if self.rescale_factor is not None:
-                    new_frame = self.rescale(new_frame, self.rescale_factor)
-
                 cv2.imwrite(f"{self.root}/{self.dir}_PROCESSED/{idx}{self.df}", new_frame)
 
 

@@ -2,7 +2,7 @@ import torch
 
 from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
-from src.SIV_library.lib import OpticalFlow
+from src.SIV_library.lib import OpticalFlow, SIV
 
 
 class Warp(torch.nn.Module):
@@ -16,8 +16,10 @@ class Warp(torch.nn.Module):
 
         self.apply_to = ['a']  # apply this transform to ONLY the first image of the pair
 
-    def forward(self, image):
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
         rows, cols = image.shape[-2:]
+        self.interpolate_field(image.shape[-2:])  # interpolate SIV results to image size
+
         x, y = self.x / ((cols - 1) / 2) - 1, self.y / ((rows - 1) / 2) - 1
 
         # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
@@ -28,6 +30,19 @@ class Warp(torch.nn.Module):
         img_new = grid_sample(image.float(), v_grid[None, :, :, :], mode='bicubic').to(torch.uint8)
         self.idx += 1
         return img_new
+
+    def interpolate_field(self, img_shape) -> None:
+        if self.u.shape[-2:] == img_shape:
+            return
+
+        self.u = interpolate(self.u[None, :, :, :], img_shape, mode='bicubic').squeeze()
+        self.v = interpolate(self.v[None, :, :, :], img_shape, mode='bicubic').squeeze()
+
+        y, x = torch.meshgrid(torch.arange(0, img_shape[0], 1), torch.arange(0, img_shape[1], 1))
+        self.x, self.y = x.expand(self.x.shape[0], -1, -1), y.expand(self.y.shape[0], -1, -1)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
 
 
 def coarse_to_fine(optical: OpticalFlow, num_passes: int = 3, scale_factor: float = 1/2):
@@ -63,10 +78,17 @@ def coarse_to_fine(optical: OpticalFlow, num_passes: int = 3, scale_factor: floa
     return x, y, u, -v
 
 
-def match_refine():
+def match_refine(matching: SIV, optical: OpticalFlow, mode: int = 1):
     """
     runs the matching algorithm and refines the result with optical flow
     https://link-springer-com.tudelft.idm.oclc.org/article/10.1007/s00348-019-2820-4?fromPaywallRec=false
     """
+    x, y, u, v = matching.run(mode=mode)
 
-    pass
+    warp = Warp(x, y, u, v)
+    optical.dataset.transforms = [warp]
+
+    x, y, du, dv = optical.run()
+    u, v = u + du, v + dv
+
+    return x, y, u, -v

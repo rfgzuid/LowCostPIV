@@ -6,6 +6,11 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     windows, areas = windows.float(), areas.float()
     (count, window_rows, window_cols), (area_rows, area_cols) = windows.shape, areas.shape[-2:]
 
+    # [6] - all windows with intensity std < 4 will be ignored (erroneous)
+    stds = torch.std(windows, dim=(1, 2))
+    err = torch.where(stds < 4., True, False).to(windows.device)
+    areas[err] = torch.zeros((area_rows, area_cols)).to(windows.device)
+
     res = torch.zeros((count, area_rows - window_rows + 1, area_cols - window_cols + 1), device=windows.device)
 
     if mode == 0:  # correlation mode

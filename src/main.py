@@ -1,5 +1,5 @@
 from src.SIV_library.processing import Video, Processor, Viewer
-from torchPIV.PIVbackend import OfflinePIV, free_cuda_memory
+from src.SIV_library.lib import SIV
 
 import numpy as np
 import torch
@@ -8,50 +8,35 @@ import os
 
 
 if __name__ == "__main__":
-    video_file = "plume simulation.mp4"
+    video_file = "Cilinder.MOV"
     fn = video_file.split(".")[0]
 
     # reference frame specified first, then the range we want to analyse with SIV
-    frames = [0, *(i for i in range(225, 351))]
+    frames = [0, *(i for i in range(225, 325))]
 
-    vid = Video(rf"Test Data/{video_file}", df='.jpg', indices=frames)
-    # vid.show_frame(500)
+    vid = Video(rf"Test Data/{video_file}", df='.png', indices=frames)
     vid.create_frames()
 
-    processor = Processor(rf"Test Data/{fn}", df='.jpg', denoise=True, rescale=None, crop=False)
+    processor = Processor(rf"Test Data/{fn}", df='.png')
     processor.postprocess()
 
-    device = torch.cuda.get_device_name() if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     print(device)
-    free_cuda_memory()
 
     capture_fps = 240.
     scale = 0.02
-    t = OfflinePIV(
-        folder=rf"Test Data/{fn}_PROCESSED",  # Path to experiment
-        device=device,  # Device name
-        file_fmt=".jpg",
-        wind_size=64,
+
+    siv = SIV(
+        folder=rf"Test Data/{fn}_PROCESSED",
+        device=device,
+        window_size=64,
         overlap=32,
-        dt=int(1_000_000/capture_fps),  # Time between frames, mcs
-        scale=scale,  # mm/pix
-        multipass=1,
-        multipass_mode="DWS",  # CWS or DWS
-        multipass_scale=2.0,  # Window downscale on each pass
-        folder_mode="sequential"  # Pairs or sequential frames
+        search_area=(20, 20, 20, 20)
     )
 
-
     if f"{fn}_RESULTS.npy" not in os.listdir(f"Test Data"):
-        results = []
-        for out in t():
-            x, y, vx, vy = out
-
-            # intercept nan values to prevent plotting bugs (false vectors)
-            vx, vy = np.nan_to_num(vx), np.nan_to_num(vy)
-            results.append((x, y, vx, vy))
-
-        res = np.array(results)
+        x, y, vx, vy = siv.run(mode=1)
+        res = np.array((x.cpu(), y.cpu(), vx.cpu(), vy.cpu()))
         np.save(rf"Test Data/{fn}_RESULTS", res)
     else:
         print("Loading results...")
@@ -60,8 +45,5 @@ if __name__ == "__main__":
     viewer = Viewer(rf"Test Data/{fn}_PROCESSED", playback_fps=30., capture_fps=capture_fps)
 
     # viewer.play_video()
-    print(res[0])
-    print(res.shape)
-    print(res[0].shape)
     viewer.vector_field(res, scale)
     # viewer.velocity_field(res, scale, 30, 'cubic')
