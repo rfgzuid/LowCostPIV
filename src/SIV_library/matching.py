@@ -6,7 +6,7 @@ def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.
     windows, areas = windows.float(), areas.float()
     (count, window_rows, window_cols), (area_rows, area_cols) = windows.shape, areas.shape[-2:]
 
-    # [6] - all windows with intensity std < 4 will be ignored (erroneous)
+    # [6] - all windows with intensity std < 4 will be ignored (error-prone)
     stds = torch.std(windows, dim=(1, 2))
     err = torch.where(stds < 4., True, False).to(windows.device)
     areas[err] = torch.zeros((area_rows, area_cols)).to(windows.device)
@@ -53,7 +53,7 @@ def window_array(array: torch.Tensor, window_size, overlap,
             .reshape(-1, window_size + top + bottom, window_size + left + right))
 
 
-def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 0):
+def correlation_to_displacement(corr: torch.Tensor, search_area, n_rows, n_cols, mode: int = 0):
     c, rows, cols = corr.shape
     device = corr.device
 
@@ -142,14 +142,13 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
     u = m2d[:, 1][:, None] + s_x[:, None]
     v = m2d[:, 0][:, None] + s_y[:, None]
 
-    default_peak_position = corr.shape[-2:]
+    left, right, top, bottom = search_area
+    default_peak_position = corr.shape[-2] + (top - bottom), corr.shape[-1] + (left - right)
+
     v = v - int(default_peak_position[0] / 2)
     u = u - int(default_peak_position[1] / 2)
 
-    u[no_displacements], v[no_displacements] = torch.nan, torch.nan
-
-    torch.nan_to_num_(v)
-    torch.nan_to_num_(u)
+    u[no_displacements], v[no_displacements] = 0., 0.
 
     u = u.reshape(n_rows, n_cols)
     v = v.reshape(n_rows, n_cols)
@@ -157,8 +156,8 @@ def correlation_to_displacement(corr: torch.Tensor, n_rows, n_cols, mode: int = 
     return u, v
 
 
-def get_field_shape(image_size, search_area_size, overlap):
-    field_shape = (torch.tensor(image_size) - search_area_size) // (search_area_size - overlap) + 1
+def get_field_shape(image_size, window_size, overlap):
+    field_shape = (torch.tensor(image_size) - window_size) // (window_size - overlap) + 1
     return tuple(field_shape.tolist())
 
 

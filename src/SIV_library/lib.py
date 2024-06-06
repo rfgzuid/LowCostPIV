@@ -75,7 +75,7 @@ class SIV:
             area = window_array(b, self.window_size, self.overlap, area=self.search_area)
 
             match = block_match(window, area, mode)
-            du, dv = correlation_to_displacement(match, n_rows, n_cols, mode)
+            du, dv = correlation_to_displacement(match, self.search_area, n_rows, n_cols, mode)
 
             u[idx], v[idx] = du, dv
         return x, y, u, -v
