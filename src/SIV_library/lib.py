@@ -45,17 +45,21 @@ class SIV:
                  window_size: int = 128,
                  overlap: int = 64,
                  search_area: tuple[int, int, int, int] = (0, 0, 0, 0),
+                 mode: int = 1,
+                 num_passes: int = 1,
+                 scale_factor: float = 1/2
                  ) -> None:
 
         self.dataset = SIVDataset(folder=folder, device=device)
         self.device = device
         self.window_size, self.overlap, self.search_area = window_size, overlap, search_area
+        self.mode, self.num_passes, self.scale_factor = mode, num_passes, scale_factor
 
         self.img_shape = self.dataset[0][0].shape
 
-    def run(self, mode: int):
+    def run(self):
         for idx, data in tqdm(enumerate(self.dataset), total=len(self.dataset),
-                              desc="SAD" if mode == 1 else "Correlation"):
+                              desc="SAD" if self.mode == 1 else "Correlation"):
             img_a, img_b = data
             a, b = img_a.to(self.device), img_b.to(self.device)
 
@@ -71,13 +75,18 @@ class SIV:
                 u, v = (torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device),
                         torch.zeros((len(self.dataset), n_rows, n_cols), device=self.device))
 
-            window = window_array(a, self.window_size, self.overlap)
-            area = window_array(b, self.window_size, self.overlap, area=self.search_area)
+            # multipass loop
+            for p in range(self.num_passes):
+                scale = self.scale_factor ** p
+                window_size, overlap = int(self.window_size * scale), int(self.overlap * scale)
 
-            match = block_match(window, area, mode)
-            du, dv = correlation_to_displacement(match, self.search_area, n_rows, n_cols, mode)
+                window = window_array(a, window_size, overlap)
+                area = window_array(b, window_size, overlap, area=self.search_area)
 
-            u[idx], v[idx] = du, dv
+                match = block_match(window, area, self.mode)
+                du, dv = correlation_to_displacement(match, self.search_area, n_rows, n_cols, self.mode)
+
+                u[idx], v[idx] = u[idx] + du, v[idx] + dv
         return x, y, u, -v
 
 

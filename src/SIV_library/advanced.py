@@ -82,17 +82,13 @@ def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float =
     return x, y, u, -v
 
 
-def ctf_match(matching: SIV, num_passes: int = 3, scale_factor: float = 1/2):
-    pass
-
-
-def match_refine(matching: SIV, optical: OpticalFlow, mode: int = 1):
+def match_refine(matching: SIV, optical: OpticalFlow):
     """
     runs the matching algorithm and refines the result with optical flow
     https://link-springer-com.tudelft.idm.oclc.org/article/10.1007/s00348-019-2820-4?fromPaywallRec=false
     """
     img_shape = matching.dataset.img_shape
-    x, y, u, v = matching.run(mode=mode)
+    x, y, u, v = matching.run()
 
     warp = Warp(x, y, u, v)
 
