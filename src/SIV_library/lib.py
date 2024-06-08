@@ -83,13 +83,13 @@ class SIV:
 
                 up, vp = (du, dv) if p == 0 else (up + du, vp + dv)
 
-        # create result tensors
-        if idx == 0:
-            u = torch.zeros((len(self.dataset), n_rows, n_cols)).to(self.device)
-            v = torch.zeros((len(self.dataset), n_rows, n_cols)).to(self.device)
-            x, y = xp.expand(len(self.dataset), -1, -1), yp.expand(len(self.dataset), -1, -1)
+            # create result tensors
+            if idx == 0:
+                u = torch.zeros((len(self.dataset), n_rows, n_cols)).to(self.device)
+                v = torch.zeros((len(self.dataset), n_rows, n_cols)).to(self.device)
+                x, y = xp.expand(len(self.dataset), -1, -1), yp.expand(len(self.dataset), -1, -1)
 
-        u[idx], v[idx] = up, vp
+            u[idx], v[idx] = up, vp
         return x, y, u, -v
 
 
