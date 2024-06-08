@@ -53,6 +53,16 @@ def window_array(array: torch.Tensor, window_size, overlap,
             .reshape(-1, window_size + top + bottom, window_size + left + right))
 
 
+def shift_windows(array: torch.Tensor, grid: torch.Tensor,  u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    frame_shape = array.shape
+
+    new_grid = grid + v * frame_shape[-1] + u
+    new_grid.clamp_(0, array.numel()-1)
+
+    f_new = torch.gather(array.view(-1), -1, new_grid.view(-1)).reshape(grid.shape)
+    return f_new
+
+
 def correlation_to_displacement(corr: torch.Tensor, search_area, n_rows, n_cols, mode: int = 0):
     c, rows, cols = corr.shape
     device = corr.device
