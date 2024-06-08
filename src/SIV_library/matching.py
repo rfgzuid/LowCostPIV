@@ -1,6 +1,5 @@
-from torch.nn.functional import conv2d, pad
+from torch.nn.functional import conv2d, pad, interpolate
 import torch
-from .advanced import Warp
 
 
 def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
@@ -178,70 +177,19 @@ def shifted_window_array(img_a, window_size, overlap, x, y, u, v):
     frame_shape = img_a.shape
     pixel_indices = torch.arange(0, frame_shape[-2] * frame_shape[-1], dtype=torch.int64).reshape(frame_shape)
 
-    idx_windows = window_array(pixel_indices, window_size, overlap)
+    idx_windows = window_array(pixel_indices.to(img_a.device), window_size, overlap)
 
-    warper = Warp(x, y, u, v)
-    warper.interpolate_field(frame_shape)
-    u_interp, v_interp = warper.u, warper.v
+    u_interp = interpolate(u[None, None, :, :], frame_shape, mode='bicubic').squeeze()
+    v_interp = interpolate(v[None, None, :, :], frame_shape, mode='bicubic').squeeze()
 
     xx, yy = x[...].to(torch.int64), y[...].to(torch.int64)
     u, v = u_interp[yy, xx], v_interp[yy, xx]
 
-    u, v = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
-    u, v = u.view(-1)[..., None, None], v.view(-1)[..., None, None]
+    u2, v2 = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
+    u2, v2 = u2.view(-1)[..., None, None], v2.view(-1)[..., None, None]
 
-    new_grid = idx_windows + v * frame_shape[-1] + u
+    new_grid = idx_windows - v2 * frame_shape[-1] - u2
     new_grid.clamp_(0, img_a.numel() - 1)
 
     aa = torch.gather(img_a.view(-1), -1, new_grid.view(-1)).reshape(idx_windows.shape)
-    return aa
-
-
-def shift_windows(array: torch.Tensor, grid: torch.Tensor,  u: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-    frame_shape = array.shape
-
-    new_grid = grid + v * frame_shape[-1] + u
-    new_grid.clamp_(0, array.numel()-1)
-
-    f_new = torch.gather(array.view(-1), -1, new_grid.view(-1)).reshape(grid.shape)
-    return f_new
-
-
-class piv_iteration_DWS:
-    def __init__(self, frame_shape, wind_size, overlap) -> None:
-        self.frame_shape = frame_shape
-        self.n_rows, self.n_cols = get_field_shape(frame_shape, search_area_size=wind_size, overlap=overlap)
-
-        self.x, self.y = get_x_y(frame_shape, wind_size, overlap)
-
-        self.idx = window_array(
-            torch.arange(0, frame_shape[-2] * frame_shape[-1], dtype=torch.int64).reshape(frame_shape),
-            wind_size, overlap
-        )
-
-    def __call__(self, frame_a, frame_b, x0, y0, u0, v0):
-        warper = Warp(x0, y0, u0, v0)
-        warper.interpolate_field(self.frame_shape)
-        u_interp, v_interp = warper.u, warper.v
-
-        xx, yy = self.x[...].to(torch.int64), self.y[...].to(torch.int64)
-        u, v = u_interp[yy, xx], v_interp[yy, xx]
-
-        u, v = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
-        u, v = u.view(-1)[..., None, None], v.view(-1)[..., None, None]
-
-        aa = interpolation_DWS(frame_a, self.idx, -u2t, -v2t)
-        bb = interpolation_DWS(frame_b, self.idx, u2t, v2t)
-
-        corr = correalte_fft(aa, bb)
-        corr = corr - torch.amin(corr, (-2, -1), keepdim=True)
-
-        du, dv, val = correlation_to_displacement(corr, self.n_rows, self.n_cols, validate)
-
-        v = 2 * np.rint(v2) + dv
-        u = 2 * np.rint(u2) + du
-
-        v[mask_v] = v0[mask_v]
-        u[mask_u] = u0[mask_u]
-        print(f"Iteration finished in {(time() - iter_proc):.3f} sec", end=" ")
-        return u, v, self.x, self.y, val
+    return aa, u, v
