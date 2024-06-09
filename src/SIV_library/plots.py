@@ -4,7 +4,7 @@ import numpy as np
 from IPython.display import HTML
 
 
-def plot_flow(u, v, grid_spacing: int = 50, show_img: bool = True, fn: str | None = None):
+def plot_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
     num_frames, height, width = u.shape
     u, v = u.cpu().numpy(), v.cpu().numpy()
 
