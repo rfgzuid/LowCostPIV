@@ -183,11 +183,11 @@ def shifted_window_array(img_a, window_size, overlap, x, y, u, v):
     xx, yy = x[...].to(torch.int64), y[...].to(torch.int64)
     u, v = u_interp[yy, xx], v_interp[yy, xx]
 
-    u2, v2 = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
-    u2, v2 = u2.view(-1)[..., None, None], v2.view(-1)[..., None, None]
+    u, v = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
+    u2, v2 = u.view(-1)[..., None, None], v.view(-1)[..., None, None]
 
     new_grid = idx_windows - v2 * frame_shape[-1] - u2
     new_grid.clamp_(0, img_a.numel() - 1)
 
     aa = torch.gather(img_a.view(-1), -1, new_grid.view(-1)).reshape(idx_windows.shape)
-    return aa, u, v
+    return aa, u.to(torch.float32), v.to(torch.float32)
