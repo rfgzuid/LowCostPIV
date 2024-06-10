@@ -4,6 +4,7 @@ Software for the use of low-cost PIV set-ups, based on [TorchPIV](https://github
 Currently implemented tracking methods are:
 - Template matching: cross-correlation and Sum of Absolute Difference (SAD)
 - Optical flow, based on the Horn-Schunck method
+
 Both methods have a pyramidal multipass mode.
 
 ## Example of usage
