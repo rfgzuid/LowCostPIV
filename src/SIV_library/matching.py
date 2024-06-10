@@ -97,8 +97,6 @@ def correlation_to_displacement(corr: torch.Tensor, search_area, n_rows, n_cols,
         s_x = (torch.log(cl) - torch.log(cr)) / (2 * (torch.log(cl) + torch.log(cr)) - 4 * torch.log(cm))
         s_y = (torch.log(cb) - torch.log(ct)) / (2 * (torch.log(cb) + torch.log(ct)) - 4 * torch.log(cm))
 
-        s_x[edge_cases], s_y[edge_cases] = 0., 0.
-
     # Polynomial interpolation for SAD
     if mode == 1:
         xx = torch.tensor([[-1, 0, 1],
@@ -135,8 +133,8 @@ def correlation_to_displacement(corr: torch.Tensor, search_area, n_rows, n_cols,
         # cases where interpolation fails: override with s = 0.
         s_x = torch.where(torch.abs(s_x) >= 1., 0., s_x)
         s_y = torch.where(torch.abs(s_y) >= 1., 0., s_y)
-        s_x[edge_cases], s_y[edge_cases] = 0., 0.
 
+    s_x[edge_cases], s_y[edge_cases] = 0., 0.
     m2d = torch.cat((m // rows, m % cols), -1)
 
     u = m2d[:, 1][:, None] + s_x[:, None]

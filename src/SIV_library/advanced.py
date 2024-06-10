@@ -4,8 +4,6 @@ from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
 from src.SIV_library.lib import OpticalFlow, SIV
 
-# TODO: implement DWS interpolation - shifting windows for multipass SIV (see TorchPIV github)
-
 
 class Warp(torch.nn.Module):
     """Custom module that creates a warped images according to the velocity field acquired in a previous pass
