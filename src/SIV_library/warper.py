@@ -289,13 +289,13 @@ class WarperApp(tk.Tk):
             scale = self.scale_var.get()
 
             # Directory to save the frames
-            output_dir = 'C:/Users/jortd/PycharmProjects/kloten/Test Data/smokechessboard_warped'
+            output_dir = 'C:/Users/jortd/PycharmProjects/kloten/Test Data/2371_PROCESSED_warped'
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir)
 
             frame_files = sorted(os.listdir(self.frame_dir))
-            frame_count = 0  # Define frame_count here
-            for i, frame_file in enumerate(frame_files):
+
+            for frame_file in frame_files:
                 frame_path = os.path.join(self.frame_dir, frame_file)
                 frame = cv2.imread(frame_path)
                 hh, ww = frame.shape[:2]
@@ -306,19 +306,15 @@ class WarperApp(tk.Tk):
                                     cv2.INTER_AREA)
                 result_image = Image.fromarray(result)
 
-                # Save the scaled frame
-                frame_path = os.path.join(output_dir, f"{i:04d}.png")
-                result_image.save(frame_path)
+                # Save the scaled frame with the original filename
+                output_frame_path = os.path.join(output_dir, frame_file)
+                result_image.save(output_frame_path)
 
                 result_image_tk = ImageTk.PhotoImage(result_image)
                 self.video_canvas.delete("all")
                 self.video_canvas.create_image(0, 0, anchor=tk.NW, image=result_image_tk)
                 self.update_idletasks()
                 self.update()
-
-                frame_count += 1  # Now you can increment frame_count
-
-            cap.release()
 
     # Method to handle mouse move event for magnifier
     def on_mouse_move(self, event):

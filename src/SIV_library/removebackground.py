@@ -17,5 +17,5 @@ frames = [*(i for i in range(317, 338)), *(i for i in range(557, 578)), *(i for 
 #vid = Video(rf"../Test Data/{video_file}", df='.png', indices=frames)
 #vid.create_frames()
 
-processor = Processor(rf"../../Test Data/IMG_4321", df='.png')
+processor = Processor(rf"../Test Data/IMG_2371", df='.png')
 processor.postprocess()
