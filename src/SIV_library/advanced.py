@@ -74,7 +74,7 @@ def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float =
             v = interpolate(v[None, :, :, :], sizes[idx + 1], mode='bicubic').squeeze()
 
             u, v = u / scale_factor, v / scale_factor
-    return x, y, u, -v
+    return x, y, u, v
 
 
 def match_refine(matching: SIV, optical: OpticalFlow):
@@ -94,5 +94,4 @@ def match_refine(matching: SIV, optical: OpticalFlow):
 
     _, _, du, dv = optical.run()
     u, v = u + du, v + dv
-
-    return x, y, u, -v
+    return x, y, u, v

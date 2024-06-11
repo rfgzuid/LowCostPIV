@@ -182,9 +182,6 @@ class WindowShift:
         self.idx_a = window_array(pixel_idx, window_size, overlap)
         self.idx_b = window_array(pixel_idx, window_size, overlap, search_area)
 
-        # print(self.idx_a[0])
-        # print(self.idx_b[0])
-
     def run(self, img_a, img_b, x, y, u, v):
         u_interp = interpolate(u[None, None, :, :], self.img_shape, mode='bicubic').squeeze()
         v_interp = interpolate(v[None, None, :, :], self.img_shape, mode='bicubic').squeeze()
@@ -194,48 +191,29 @@ class WindowShift:
         u2, v2 = (u/2).view(-1)[..., None, None].to(torch.int64), (v/2).view(-1)[..., None, None].to(torch.int64)
 
         a_grid = self.idx_a + v2 * self.img_shape[-1] - u2
-        a_grid.clamp_(0, img_a.numel() - 1)
+        a_grid.clamp(0, img_a.numel() - 1)
         windows = torch.gather(img_a.view(-1), -1, a_grid.view(-1)).reshape(self.idx_a.shape)
 
-        img_b = pad(img_b, self.search_area)
+        b_pad = pad(img_b, self.search_area)
         b_grid = self.idx_a - v2 * self.img_shape[-1] + u2
-        b_grid.clamp_(0, img_b.numel() - 1)
-        areas = torch.gather(img_a.view(-1), -1, b_grid.view(-1)).reshape(self.idx_a.shape)
+        b_grid.clamp(0, b_pad.numel() - 1)
+        areas = torch.gather(b_pad.view(-1), -1, b_grid.view(-1)).reshape(self.idx_a.shape)
+
+        # idx = 2456
+        # a_img, b_img = img_a.cpu().numpy(), img_b.cpu().numpy()
+        #
+        # tl_a = (a_grid[idx, 0, 0].item() % self.img_shape[-1], a_grid[idx, 0, 0].item() // self.img_shape[-1])
+        # br_a = (a_grid[idx, -1, -1].item() % self.img_shape[-1], a_grid[idx, -1, -1].item() // self.img_shape[-1])
+        # tl_b = (b_grid[idx, 0, 0].item() % self.img_shape[-1], b_grid[idx, 0, 0].item() // self.img_shape[-1])
+        # br_b = (b_grid[idx, -1, -1].item() % self.img_shape[-1], b_grid[idx, -1, -1].item() // self.img_shape[-1])
+        #
+        # a_img = cv2.rectangle(a_img, tl_a, br_a, (127, 127, 127), 1)
+        # a_img = cv2.rectangle(a_img, tl_b, br_b, (255, 255, 255), 1)
+        #
+        # cv2.imshow(f'{u2[idx, 0, 0].item(), v2[idx, 0, 0].item()}', a_img)
+        # # cv2.imshow('b', b_img)
+        #
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
         return windows, areas, u, v
-
-
-
-# def shifted_window_array(img_a, img_b, window_size, overlap, search_area, x, y, u, v):
-#     left, right, top, bottom = search_area
-#     frame_shape = img_a.shape
-#
-#     u_interp = interpolate(u[None, None, :, :], frame_shape, mode='bicubic').squeeze()
-#     v_interp = interpolate(v[None, None, :, :], frame_shape, mode='bicubic').squeeze()
-#
-#     xx, yy = x[...].to(torch.int64), y[...].to(torch.int64)
-#     u, v = u_interp[yy, xx], v_interp[yy, xx]
-#
-#     u, v = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
-#     u2, v2 = u.view(-1)[..., None, None], v.view(-1)[..., None, None]
-#
-#     pixel_indices = torch.arange(0, frame_shape[-2] * frame_shape[-1], dtype=torch.int64).reshape(frame_shape)
-#     idx_windows = window_array(pixel_indices.to(img_a.device), window_size, overlap)
-#
-#     new_grid = idx_windows - v2 * frame_shape[-1] + u2
-#
-#     recl = (idx_windows[30, 0, 0].item() % frame_shape[-1], idx_windows[30, 0, 0].item() // frame_shape[-1])
-#     recr = (idx_windows[30, -1, -1].item() % frame_shape[-1], idx_windows[30, -1, -1].item() // frame_shape[-1])
-#     womp = img_a.cpu().numpy()
-#     womp = cv2.rectangle(womp, recl, recr, (127, 127, 127), 1)
-#     recl = (new_grid[30, 0, 0].item() % frame_shape[-1], new_grid[30, 0, 0].item() // frame_shape[-1])
-#     recr = (new_grid[30, -1, -1].item() % frame_shape[-1], new_grid[30, -1, -1].item() // frame_shape[-1])
-#     womp = cv2.rectangle(womp, recl, recr, (255, 255, 255), 1)
-#     cv2.imshow(f'{u2[30].item(), v2[30].item()}', womp)
-#     cv2.waitKey(0)
-#     cv2.destroyAllWindows()
-#
-#     new_grid.clamp_(0, img_a.numel() - 1)
-#
-#     windows = torch.gather(img_a.view(-1), -1, new_grid.view(-1)).reshape(idx_windows.shape)
-#     return windows, u.to(torch.float32), v.to(torch.float32)
