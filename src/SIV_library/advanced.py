@@ -22,8 +22,6 @@ class Warp(torch.nn.Module):
 
         x, y = self.x / ((cols - 1) / 2) - 1, self.y / ((rows - 1) / 2) - 1
 
-        # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
-        # https://discuss.pytorch.org/t/solved-torch-grid-sample/51662/2
         grid = torch.stack((x[self.idx], y[self.idx]), dim=-1).to(x.device)
         v_grid = grid + torch.stack((-self.u[self.idx] / (cols / 2), self.v[self.idx] / (rows / 2)), dim=-1)
 
