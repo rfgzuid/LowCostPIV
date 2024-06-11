@@ -1,5 +1,6 @@
 from torch.nn.functional import conv2d, pad, interpolate
 import torch
+import cv2
 
 
 def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
@@ -171,23 +172,70 @@ def get_x_y(image_size, search_area_size, overlap):
     return x, y
 
 
-def shifted_window_array(img_a, window_size, overlap, x, y, u, v):
-    frame_shape = img_a.shape
-    pixel_indices = torch.arange(0, frame_shape[-2] * frame_shape[-1], dtype=torch.int64).reshape(frame_shape)
+class WindowShift:
+    # copies piv_iteration_DWS
+    def __init__(self, img_shape, window_size, overlap, search_area, device):
+        self.img_shape = img_shape
+        self.search_area = search_area
 
-    idx_windows = window_array(pixel_indices.to(img_a.device), window_size, overlap)
+        pixel_idx = torch.arange(0, img_shape[-2] * img_shape[-1], dtype=torch.int64, device=device).reshape(img_shape)
+        self.idx_a = window_array(pixel_idx, window_size, overlap)
+        self.idx_b = window_array(pixel_idx, window_size, overlap, search_area)
 
-    u_interp = interpolate(u[None, None, :, :], frame_shape, mode='bicubic').squeeze()
-    v_interp = interpolate(v[None, None, :, :], frame_shape, mode='bicubic').squeeze()
+        # print(self.idx_a[0])
+        # print(self.idx_b[0])
 
-    xx, yy = x[...].to(torch.int64), y[...].to(torch.int64)
-    u, v = u_interp[yy, xx], v_interp[yy, xx]
+    def run(self, img_a, img_b, x, y, u, v):
+        u_interp = interpolate(u[None, None, :, :], self.img_shape, mode='bicubic').squeeze()
+        v_interp = interpolate(v[None, None, :, :], self.img_shape, mode='bicubic').squeeze()
 
-    u, v = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
-    u2, v2 = u.view(-1)[..., None, None], v.view(-1)[..., None, None]
+        xx, yy = x[...].to(torch.int64), y[...].to(torch.int64)
+        u, v = u_interp[yy, xx].round(), v_interp[yy, xx].round()
+        u2, v2 = (u/2).view(-1)[..., None, None].to(torch.int64), (v/2).view(-1)[..., None, None].to(torch.int64)
 
-    new_grid = idx_windows - v2 * frame_shape[-1] - u2
-    new_grid.clamp_(0, img_a.numel() - 1)
+        a_grid = self.idx_a + v2 * self.img_shape[-1] - u2
+        a_grid.clamp_(0, img_a.numel() - 1)
+        windows = torch.gather(img_a.view(-1), -1, a_grid.view(-1)).reshape(self.idx_a.shape)
 
-    aa = torch.gather(img_a.view(-1), -1, new_grid.view(-1)).reshape(idx_windows.shape)
-    return aa, u.to(torch.float32), v.to(torch.float32)
+        img_b = pad(img_b, self.search_area)
+        b_grid = self.idx_a - v2 * self.img_shape[-1] + u2
+        b_grid.clamp_(0, img_b.numel() - 1)
+        areas = torch.gather(img_a.view(-1), -1, b_grid.view(-1)).reshape(self.idx_a.shape)
+
+        return windows, areas, u, v
+
+
+
+# def shifted_window_array(img_a, img_b, window_size, overlap, search_area, x, y, u, v):
+#     left, right, top, bottom = search_area
+#     frame_shape = img_a.shape
+#
+#     u_interp = interpolate(u[None, None, :, :], frame_shape, mode='bicubic').squeeze()
+#     v_interp = interpolate(v[None, None, :, :], frame_shape, mode='bicubic').squeeze()
+#
+#     xx, yy = x[...].to(torch.int64), y[...].to(torch.int64)
+#     u, v = u_interp[yy, xx], v_interp[yy, xx]
+#
+#     u, v = torch.round(u).to(torch.int64), torch.round(v).to(torch.int64)
+#     u2, v2 = u.view(-1)[..., None, None], v.view(-1)[..., None, None]
+#
+#     pixel_indices = torch.arange(0, frame_shape[-2] * frame_shape[-1], dtype=torch.int64).reshape(frame_shape)
+#     idx_windows = window_array(pixel_indices.to(img_a.device), window_size, overlap)
+#
+#     new_grid = idx_windows - v2 * frame_shape[-1] + u2
+#
+#     recl = (idx_windows[30, 0, 0].item() % frame_shape[-1], idx_windows[30, 0, 0].item() // frame_shape[-1])
+#     recr = (idx_windows[30, -1, -1].item() % frame_shape[-1], idx_windows[30, -1, -1].item() // frame_shape[-1])
+#     womp = img_a.cpu().numpy()
+#     womp = cv2.rectangle(womp, recl, recr, (127, 127, 127), 1)
+#     recl = (new_grid[30, 0, 0].item() % frame_shape[-1], new_grid[30, 0, 0].item() // frame_shape[-1])
+#     recr = (new_grid[30, -1, -1].item() % frame_shape[-1], new_grid[30, -1, -1].item() // frame_shape[-1])
+#     womp = cv2.rectangle(womp, recl, recr, (255, 255, 255), 1)
+#     cv2.imshow(f'{u2[30].item(), v2[30].item()}', womp)
+#     cv2.waitKey(0)
+#     cv2.destroyAllWindows()
+#
+#     new_grid.clamp_(0, img_a.numel() - 1)
+#
+#     windows = torch.gather(img_a.view(-1), -1, new_grid.view(-1)).reshape(idx_windows.shape)
+#     return windows, u.to(torch.float32), v.to(torch.float32)

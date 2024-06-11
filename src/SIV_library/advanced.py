@@ -1,7 +1,7 @@
 import torch
-
 from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
+
 from src.SIV_library.lib import OpticalFlow, SIV
 
 
@@ -41,9 +41,6 @@ class Warp(torch.nn.Module):
         y, x = torch.meshgrid(torch.arange(0, img_shape[0], 1), torch.arange(0, img_shape[1], 1))
         x, y = x.expand(self.x.shape[0], -1, -1), y.expand(self.y.shape[0], -1, -1)
         self.x, self.y = x.to(self.x.device), y.to(self.y.device)
-
-
-########################################################################################################################
 
 
 def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float = 1/2):

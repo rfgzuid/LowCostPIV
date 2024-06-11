@@ -1,5 +1,5 @@
 from .matching import (window_array, get_field_shape, block_match, get_x_y,
-                       correlation_to_displacement, shifted_window_array)
+                       correlation_to_displacement, WindowShift)
 from .optical_flow import optical_flow
 
 import torch
@@ -74,9 +74,10 @@ class SIV:
 
                 if p == 0:
                     window = window_array(a, window_size, overlap)
+                    area = window_array(b, window_size, overlap, area=self.search_area)
                 else:
-                    window, up, vp = shifted_window_array(a, window_size, overlap, xp, yp, up, vp)
-                area = window_array(b, window_size, overlap, area=self.search_area)
+                    shift = WindowShift(img_shape, window_size, overlap, self.search_area, self.device)
+                    window, area, up, vp = shift.run(a, b, xp, yp, up, vp)
 
                 match = block_match(window, area, self.mode)
                 du, dv = correlation_to_displacement(match, self.search_area, n_rows, n_cols, self.mode)
