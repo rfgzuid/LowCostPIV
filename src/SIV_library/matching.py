@@ -1,6 +1,5 @@
 from torch.nn.functional import conv2d, pad, interpolate
 import torch
-import cv2
 
 
 def block_match(windows: torch.Tensor, areas: torch.Tensor, mode: int) -> torch.Tensor:
