@@ -39,7 +39,7 @@ def plot_flow(u, v, grid_spacing: int = 50, fn: str | None = None):
         ax.set_title(f"t = {idx/240:.3f} s")
         return image, vectors
 
-    ani = animation.FuncAnimation(fig=fig, func=update, frames=u.shape[0], interval=1000/30)
+    ani = animation.FuncAnimation(fig=fig, func=update, frames=u.shape[0], interval=1000/10)
 
     if fn is not None:
         writer = animation.PillowWriter(fps=10)
