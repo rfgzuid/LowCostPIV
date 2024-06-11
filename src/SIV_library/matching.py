@@ -191,29 +191,11 @@ class WindowShift:
         u2, v2 = (u/2).view(-1)[..., None, None].to(torch.int64), (v/2).view(-1)[..., None, None].to(torch.int64)
 
         a_grid = self.idx_a + v2 * self.img_shape[-1] - u2
-        a_grid.clamp(0, img_a.numel() - 1)
+        a_grid.clamp_(0, img_a.numel() - 1)
         windows = torch.gather(img_a.view(-1), -1, a_grid.view(-1)).reshape(self.idx_a.shape)
 
-        b_pad = pad(img_b, self.search_area)
-        b_grid = self.idx_a - v2 * self.img_shape[-1] + u2
-        b_grid.clamp(0, b_pad.numel() - 1)
-        areas = torch.gather(b_pad.view(-1), -1, b_grid.view(-1)).reshape(self.idx_a.shape)
-
-        # idx = 2456
-        # a_img, b_img = img_a.cpu().numpy(), img_b.cpu().numpy()
-        #
-        # tl_a = (a_grid[idx, 0, 0].item() % self.img_shape[-1], a_grid[idx, 0, 0].item() // self.img_shape[-1])
-        # br_a = (a_grid[idx, -1, -1].item() % self.img_shape[-1], a_grid[idx, -1, -1].item() // self.img_shape[-1])
-        # tl_b = (b_grid[idx, 0, 0].item() % self.img_shape[-1], b_grid[idx, 0, 0].item() // self.img_shape[-1])
-        # br_b = (b_grid[idx, -1, -1].item() % self.img_shape[-1], b_grid[idx, -1, -1].item() // self.img_shape[-1])
-        #
-        # a_img = cv2.rectangle(a_img, tl_a, br_a, (127, 127, 127), 1)
-        # a_img = cv2.rectangle(a_img, tl_b, br_b, (255, 255, 255), 1)
-        #
-        # cv2.imshow(f'{u2[idx, 0, 0].item(), v2[idx, 0, 0].item()}', a_img)
-        # # cv2.imshow('b', b_img)
-        #
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
+        b_grid = self.idx_b - v2 * self.img_shape[-1] + u2
+        b_grid.clamp_(0, img_b.numel() - 1)
+        areas = torch.gather(img_b.view(-1), -1, b_grid.view(-1)).reshape(self.idx_b.shape)
 
         return windows, areas, u, v
