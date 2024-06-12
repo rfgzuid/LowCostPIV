@@ -15,7 +15,7 @@ class Video:
     """
     Load video frames and save them in a directory
     """
-    def __init__(self, path: str, df: str, indices: Collection[int, ...] | None = None) -> None:
+    def __init__(self, path: str, df: str, indices: Collection[int, ...] | None = None, prepped_frames_path: Collection[np.ndarray] | None = None) -> None:
         dirs = path.split('/')
         self.root = '/'.join(dirs[:-1])
 
@@ -23,6 +23,7 @@ class Video:
         self.df = df  # data format for frame images
 
         self.indices = indices
+        self.prepped_frames_path = prepped_frames_path
 
     def create_frames(self) -> None:
         folder_name = self.fn.split(".")[0]

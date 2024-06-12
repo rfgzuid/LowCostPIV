@@ -1,6 +1,19 @@
 import os
 from PIL import Image
 
+
+def crop_single_image(img, crop_size=(400,400), offset=(0, 0), crop_corner_points=None):
+    if crop_corner_points is not None:
+        top, left, bottom, right = crop_corner_points
+        return img[top:bottom, left:right]
+    width, height = img.shape
+    left = round((width - crop_size[0]) / 2 - offset[1])
+    top = round((height - crop_size[1]) / 2 - offset[0])
+    right = round((width + crop_size[0]) / 2 + offset[1])
+    bottom = round((height + crop_size[1]) / 2 + offset[0])
+    return img[top:bottom, left:right]
+
+
 def crop_images(input_folder, output_folder, crop_size=(400, 400)):    # Maak de output folder als deze nog niet bestaat
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
@@ -27,7 +40,7 @@ def crop_images(input_folder, output_folder, crop_size=(400, 400)):    # Maak de
     print(f'Alle afbeeldingen zijn bijgesneden en opgeslagen in {output_folder}')
 
 # Gebruik de functie
-input_folder = 'C:/Users/jortd/PycharmProjects/kloten/Test Data/2371_PROCESSED_warped'
-output_folder = 'C:/Users/jortd/PycharmProjects/kloten/Test Data/2371_crop'
-
-crop_images(input_folder, output_folder)
+# input_folder = 'C:/Users/jortd/PycharmProjects/kloten/Test Data/2371_PROCESSED_warped'
+# output_folder = 'C:/Users/jortd/PycharmProjects/kloten/Test Data/2371_crop'
+#
+# crop_images(input_folder, output_folder)
