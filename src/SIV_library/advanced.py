@@ -62,6 +62,7 @@ def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float =
         resize.apply_to = ['a', 'b']  # apply the resize transform to both images in the pair
         warp = Warp(x, y, u, v)
 
+        optical.dataset.img_shape = size
         optical.dataset.transforms = [resize, warp]
 
         _, _, du, dv = optical.run()
