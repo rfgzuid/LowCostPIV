@@ -38,7 +38,6 @@ def optical_flow(img1, img2, alpha, num_iter, eps):
         delta /= a.shape[-2] * a.shape[-1]
 
         if eps is not None and delta < eps:
-            # print('Early stopping', i)
             break
 
         u, v = u_new, v_new

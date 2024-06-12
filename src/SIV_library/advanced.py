@@ -1,7 +1,7 @@
 import torch
-
 from torch.nn.functional import grid_sample, interpolate
 from torchvision.transforms import Resize, InterpolationMode
+
 from src.SIV_library.lib import OpticalFlow, SIV
 
 
@@ -22,8 +22,6 @@ class Warp(torch.nn.Module):
 
         x, y = self.x / ((cols - 1) / 2) - 1, self.y / ((rows - 1) / 2) - 1
 
-        # https://discuss.pytorch.org/t/image-warping-for-backward-flow-using-forward-flow-matrix-optical-flow/99298
-        # https://discuss.pytorch.org/t/solved-torch-grid-sample/51662/2
         grid = torch.stack((x[self.idx], y[self.idx]), dim=-1).to(x.device)
         v_grid = grid + torch.stack((-self.u[self.idx] / (cols / 2), self.v[self.idx] / (rows / 2)), dim=-1)
 
@@ -41,9 +39,6 @@ class Warp(torch.nn.Module):
         y, x = torch.meshgrid(torch.arange(0, img_shape[0], 1), torch.arange(0, img_shape[1], 1))
         x, y = x.expand(self.x.shape[0], -1, -1), y.expand(self.y.shape[0], -1, -1)
         self.x, self.y = x.to(self.x.device), y.to(self.y.device)
-
-
-########################################################################################################################
 
 
 def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float = 1/2):
@@ -67,6 +62,7 @@ def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float =
         resize.apply_to = ['a', 'b']  # apply the resize transform to both images in the pair
         warp = Warp(x, y, u, v)
 
+        optical.dataset.img_shape = size
         optical.dataset.transforms = [resize, warp]
 
         _, _, du, dv = optical.run()
@@ -77,7 +73,7 @@ def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float =
             v = interpolate(v[None, :, :, :], sizes[idx + 1], mode='bicubic').squeeze()
 
             u, v = u / scale_factor, v / scale_factor
-    return x, y, u, -v
+    return x, y, u, v
 
 
 def match_refine(matching: SIV, optical: OpticalFlow):
@@ -97,5 +93,4 @@ def match_refine(matching: SIV, optical: OpticalFlow):
 
     _, _, du, dv = optical.run()
     u, v = u + du, v + dv
-
-    return x, y, u, -v
+    return x, y, u, v
