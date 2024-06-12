@@ -11,14 +11,17 @@ from tqdm import tqdm
 
 class SIVDataset(Dataset):
     def __init__(self, folder: str, transforms: list | None = None, device: str = "cpu") -> None:
-        # assume the files are sorted and all have the correct file type
+        # assume the files have the correct file type
         filenames = [os.path.join(folder, name) for name in os.listdir(folder)]
         filenames.sort(key=lambda x: int(os.path.split(x)[-1].split('.')[0]))
-        self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
 
-        self.img_shape = cv2.imread(filenames[0], cv2.IMREAD_GRAYSCALE).shape
+        self.img_pairs = list(zip(filenames[:-1], filenames[1:]))
+        self.idx = [int(os.path.split(x)[-1].split('.')[0]) for x in filenames]
+
         self.transforms = transforms
         self.device = device
+
+        self.img_shape = cv2.imread(filenames[0], cv2.IMREAD_GRAYSCALE).shape
 
     def __len__(self) -> int:
         return len(self.img_pairs)
