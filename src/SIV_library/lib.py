@@ -81,6 +81,7 @@ class SIV:
             # multipass loop
             for i, scale in enumerate(scales):
                 window_size, overlap = int(self.window_size * scale), int(self.overlap * scale)
+                search_area = self.search_area  # tuple(int(pad * scale) for pad in self.search_area)
 
                 n_rows, n_cols = get_field_shape(img_shape, window_size, overlap)
                 xp, yp = get_x_y(img_shape, window_size, overlap)
@@ -88,13 +89,13 @@ class SIV:
 
                 if i == 0:
                     window = window_array(a, window_size, overlap)
-                    area = window_array(b, window_size, overlap, area=self.search_area)
+                    area = window_array(b, window_size, overlap, area=search_area)
                 else:
-                    shift = WindowShift(img_shape, window_size, overlap, self.search_area, self.device)
+                    shift = WindowShift(img_shape, window_size, overlap, search_area, self.device)
                     window, area, up, vp = shift.run(a, b, xp, yp, up, vp)
 
                 match = block_match(window, area, self.mode)
-                du, dv = correlation_to_displacement(match, self.search_area, n_rows, n_cols, self.mode)
+                du, dv = correlation_to_displacement(match, search_area, n_rows, n_cols, self.mode)
 
                 up, vp = (du, dv) if i == 0 else (up + du, vp + dv)
             u[idx], v[idx] = up, vp
