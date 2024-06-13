@@ -4,6 +4,8 @@ from torchvision.transforms import Resize, InterpolationMode
 
 from src.SIV_library.lib import OpticalFlow, SIV
 
+from collections.abc import Generator
+
 
 class Warp(torch.nn.Module):
     """Custom module that creates a warped images according to the velocity field acquired in a previous pass
@@ -39,6 +41,36 @@ class Warp(torch.nn.Module):
         y, x = torch.meshgrid(torch.arange(0, img_shape[0], 1), torch.arange(0, img_shape[1], 1))
         x, y = x.expand(self.x.shape[0], -1, -1), y.expand(self.y.shape[0], -1, -1)
         self.x, self.y = x.to(self.x.device), y.to(self.y.device)
+
+
+class CTF:
+    """
+    runs the optical flow algorithm in a coarse-to-fine pyramidal structure, allowing for larger displacements
+    https://www.ipol.im/pub/art/2013/20/article.pdf
+    """
+    def __init__(self, optical: OpticalFlow, num_passes: int = 3, scale_factor: float = 1/2):
+        self.optical = optical
+        self.num_passes, self.scale_factor = num_passes, scale_factor
+
+    def __len__(self) -> int:
+        return len(self.optical.dataset)
+
+    def __call__(self) -> Generator:
+        img_shape = self.optical.dataset.img_shape
+        scales = [self.scale_factor ** (self.num_passes - p - 1) for p in range(self.num_passes)]
+        sizes = [(round(img_shape[0] * scale), round(img_shape[1] * scale)) for scale in scales]
+
+        for size in sizes:
+            # y, x = torch.meshgrid(torch.arange(0, size[0], 1), torch.arange(0, size[1], 1))
+            # resize = Resize(size, InterpolationMode.BICUBIC)
+            # resize.apply_to = ['a', 'b']  # apply the resize transform to both images in the pair
+            # warp = Warp(x, y, u, v)
+            #
+            # optical.dataset.img_shape = size
+            # optical.dataset.transforms = [resize, warp]
+            #
+            # for
+            pass
 
 
 def ctf_optical(optical: OpticalFlow, num_passes: int = 3, scale_factor: float = 1/2):
