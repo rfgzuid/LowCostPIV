@@ -72,7 +72,7 @@ class Processor:
 
     @staticmethod
     def denoise(image: np.ndarray) -> np.ndarray:
-        clean_img = cv2.fastNlMeansDenoising(image, None, h=3, templateWindowSize=7, searchWindowSize=21)
+        # clean_img = cv2.fastNlMeansDenoising(image, None, h=3, templateWindowSize=7, searchWindowSize=21)
         clean_img = cv2.medianBlur(image, 3)
         return clean_img
 
