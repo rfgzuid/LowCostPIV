@@ -15,7 +15,7 @@ from tqdm import tqdm
 def optical_flow(img1, img2, alpha, num_iter, eps):
     device = img1.device
 
-    a, b = img1[None, None, :, :].float(), img2[None, None, :, :].float()
+    a, b = img1[None, :, :, :].float(), img2[None, :, :, :].float()
     u, v = torch.zeros_like(a), torch.zeros_like(a)
 
     Ix, Iy, It = compute_derivatives(a, b)

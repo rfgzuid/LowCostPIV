@@ -291,7 +291,7 @@ def correlation_to_displacement(
     nom2 = torch.log(cb) - torch.log(ct)
     den2 = 2 * (torch.log(cb) + torch.log(ct)) - 4 * torch.log(cm)
 
-    m2d = torch.cat((m // d, m % k), -1)
+    m2d = torch.cat((m // k, m % k), -1)
 
     v = m2d[:, 0][:, None] + nom2 / den2
     u = m2d[:, 1][:, None] + nom1 / den1
