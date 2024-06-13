@@ -75,7 +75,7 @@ def correlation_to_displacement(corr: torch.Tensor, search_area, n_rows, n_cols,
 
     for idx, field in enumerate(corr):
         row_idx, col_idx = row[idx].item(), col[idx].item()
-        peak_val = torch.max(field) if mode == 0 else torch.min(field)
+        peak_val = field.max() if mode == 0 else field.min()
 
         # if multiple peak vals exist (e.g. flat field) the displacement is undetermined (set to 0)
         if rows * cols - torch.count_nonzero(field - peak_val) > 1:
@@ -135,7 +135,7 @@ def correlation_to_displacement(corr: torch.Tensor, search_area, n_rows, n_cols,
         s_y = torch.where(torch.abs(s_y) >= 1., 0., s_y)
 
     s_x[edge_cases], s_y[edge_cases] = 0., 0.
-    m2d = torch.cat((m // rows, m % cols), -1)
+    m2d = torch.cat((m // cols, m % cols), -1)
 
     u = m2d[:, 1][:, None] + s_x[:, None]
     v = m2d[:, 0][:, None] + s_y[:, None]
