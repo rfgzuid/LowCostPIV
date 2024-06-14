@@ -63,31 +63,32 @@ class SIV:
         return len(self.dataset)
 
     def __call__(self) -> Generator:
-        img_shape = self.dataset.img_shape
-        scales = [self.scale_factor ** p for p in range(self.num_passes)]
-
         loader = DataLoader(self.dataset)
         for a, b in tqdm(loader, total=len(loader), desc="SAD" if self.mode == 1 else "Correlation"):
-            for i, scale in enumerate(scales):
-                window_size, overlap = int(self.window_size * scale), int(self.overlap * scale)
-                search_area = tuple(int(pad * scale) for pad in self.search_area)
+            yield self.multipass(a, b)
 
-                n_rows, n_cols = get_field_shape(img_shape, window_size, overlap)
-                xp, yp = get_x_y(img_shape, window_size, overlap)
-                xp, yp = xp.reshape(n_rows, n_cols).to(self.device), yp.reshape(n_rows, n_cols).to(self.device)
+    def run(self, a, b):
+        scales = [self.scale_factor ** p for p in range(self.num_passes)]
+        for i, scale in enumerate(scales):
+            window_size, overlap = int(self.window_size * scale), int(self.overlap * scale)
+            search_area = tuple(int(pad * scale) for pad in self.search_area)
 
-                if i == 0:
-                    window = window_array(a, window_size, overlap)
-                    area = window_array(b, window_size, overlap, area=search_area)
-                else:
-                    shift = WindowShift(img_shape, window_size, overlap, search_area, self.device)
-                    window, area, up, vp = shift.run(a, b, xp, yp, up, vp)
+            n_rows, n_cols = get_field_shape(self.dataset.img_shape, window_size, overlap)
+            xp, yp = get_x_y(self.dataset.img_shape, window_size, overlap)
+            xp, yp = xp.reshape(n_rows, n_cols).to(self.device), yp.reshape(n_rows, n_cols).to(self.device)
 
-                match = block_match(window, area, self.mode)
-                du, dv = correlation_to_displacement(match, search_area, n_rows, n_cols, self.mode)
+            if i == 0:
+                window = window_array(a, window_size, overlap)
+                area = window_array(b, window_size, overlap, area=search_area)
+            else:
+                shift = WindowShift(self.dataset.img_shape, window_size, overlap, search_area, self.device)
+                window, area, up, vp = shift.run(a, b, xp, yp, up, vp)
 
-                up, vp = (du, dv) if i == 0 else (up + du, vp + dv)
-            yield xp, yp, up, -vp
+            match = block_match(window, area, self.mode)
+            du, dv = correlation_to_displacement(match, search_area, n_rows, n_cols, self.mode)
+
+            up, vp = (du, dv) if i == 0 else (up + du, vp + dv)
+        return xp, yp, up, -vp
 
 
 class OpticalFlow:
@@ -114,5 +115,8 @@ class OpticalFlow:
 
         loader = DataLoader(self.dataset)
         for a, b in tqdm(loader, total=len(loader), desc='Optical flow'):
-            du, dv = optical_flow(a, b, self.alpha, self.num_iter, self.eps)
+            du, dv = self.run(a, b)
             yield x, y, du, -dv
+
+    def run(self, a, b):
+        return optical_flow(a, b, self.alpha, self.num_iter, self.eps)
