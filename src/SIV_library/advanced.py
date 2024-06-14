@@ -28,15 +28,15 @@ class Warp(torch.nn.Module):
         grid = torch.stack((x, y), dim=-1).to(x.device)
         v_grid = grid + torch.stack((-self.u / (cols / 2), self.v / (rows / 2)), dim=-1)
 
-        img_new = grid_sample(image.float(), v_grid, mode='bicubic').to(torch.uint8)
+        img_new = grid_sample(image.float(), v_grid[None, :, :, :], mode='bicubic').to(torch.uint8)
         return img_new
 
     def interpolate_field(self, img_shape) -> None:
         if self.u.shape[-2:] == img_shape:
             return
 
-        self.u = interpolate(self.u[None, None, :, :], img_shape, mode='bicubic').squeeze(dim=0)
-        self.v = interpolate(self.v[None, None, :, :], img_shape, mode='bicubic').squeeze(dim=0)
+        self.u = interpolate(self.u[None, None, :, :], img_shape, mode='bicubic').squeeze()
+        self.v = interpolate(self.v[None, None, :, :], img_shape, mode='bicubic').squeeze()
 
         y, x = torch.meshgrid(torch.arange(0, img_shape[0], 1), torch.arange(0, img_shape[1], 1))
         self.x, self.y = x.to(self.x.device), y.to(self.y.device)
