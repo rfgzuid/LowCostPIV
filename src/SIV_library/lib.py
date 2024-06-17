@@ -65,7 +65,7 @@ class SIV:
     def __call__(self) -> Generator:
         loader = DataLoader(self.dataset)
         for a, b in tqdm(loader, total=len(loader), desc="SAD" if self.mode == 1 else "Correlation"):
-            yield self.multipass(a, b)
+            yield self.run(a, b)
 
     def run(self, a, b):
         scales = [self.scale_factor ** p for p in range(self.num_passes)]
